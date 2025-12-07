@@ -8,7 +8,6 @@ class User {
 	public $staff_code;
 	public $name;
 	public $password;
-	public $role = "user";
 	public $api_token;
 
 	public function __construct($db) {
@@ -17,12 +16,15 @@ class User {
 
 	// 註冊新使用者
 	public function create() {
+		// 1. 生成 Token
+        $this->api_token = bin2hex(random_bytes(32));
+
 		$query = "INSERT INTO " . $this->table_name . "
 				SET
 					staff_code = :staff_code,
 					name = :name,
 					password = :password,
-					role = :role,
+					api_token = :api_token,
 					created_at = NOW()";
 
 		$stmt = $this->conn->prepare($query);
@@ -37,9 +39,11 @@ class User {
 		$stmt->bindParam(':staff_code', $this->staff_code);
 		$stmt->bindParam(':name', $this->name);
 		$stmt->bindParam(':password', $password_hash);
-		$stmt->bindParam(':role', $this->role);
+		$stmt->bindParam(':api_token', $this->api_token);
 
 		if ($stmt->execute()) {
+			// 順便取得新產生的 ID，方便回傳
+			$this->id = $this->conn->lastInsertId();
 			return true;
 		}
 		return false;
@@ -60,7 +64,7 @@ class User {
 
 	public function login() {
 		// 撈取使用者資料
-		$query = "SELECT id, name, password, role FROM " . $this->table_name . " WHERE staff_code = :staff_code LIMIT 1";
+		$query = "SELECT id, name, password FROM " . $this->table_name . " WHERE staff_code = :staff_code LIMIT 1";
 
 		$stmt = $this->conn->prepare($query);
 
@@ -78,7 +82,6 @@ class User {
 			if(password_verify($this->password, $row['password'])) {
 				$this->id = $row['id'];
 				$this->name = $row['name'];
-				$this->role = $row['role'];
 
 				// 生成新的 API Token
 				$this->api_token = bin2hex(random_bytes(32));

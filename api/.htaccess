@@ -1,0 +1,16 @@
+<IfModule mod_rewrite.c>
+    # 1. 確保開啟 FollowSymLinks (很多 500 錯誤是因為缺了這行)
+    Options +FollowSymLinks
+    
+    RewriteEngine On
+    
+    # 2. 暫時註解掉 RewriteBase，讓 Apache 自動偵測
+    # RewriteBase /api/
+
+    # 3. 如果請求的是真實檔案或目錄，就直接讀取，不要轉址
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # 4. 其他所有請求都交給 index.php
+    RewriteRule ^(.*)$ index.php [QSA,L]
+</IfModule>
