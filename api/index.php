@@ -39,6 +39,7 @@ $db = $database->getConnection();
 // 5. 設定路由
 $router = new Router();
 
+
 // --- Auth Routes ---
 $router->add('POST', '/api/auth/login', [AuthController::class, 'login']);
 $router->add('POST', '/api/auth/register', [AuthController::class, 'register']);
@@ -46,16 +47,21 @@ $router->add('POST', '/api/auth/register', [AuthController::class, 'register']);
 // --- Dashboard Routes ---
 $router->add('GET', '/api/dashboard/summary', [DashboardController::class, 'summary']);
 
-// --- Asset Routes (RESTful 風格) ---
-// // 取得列表 (GET /api/assets)
-// $router->add('GET', '/api/assets', [AssetController::class, 'index']);
+// 取得列表 (GET /api/assets)
+$router->add('GET', '/api/assets', [AssetController::class, 'index']);
+
+// 取得單一資產 (GET /api/assets/{id})
+$router->add('GET', '/api/assets/{id}', [AssetController::class, 'show']);
+
+
+
 // 新增資產 (POST /api/assets)
 $router->add('POST', '/api/assets', [AssetController::class, 'store']);
-// 未來可擴充: 取得單一資產 (GET /api/assets/{id})
-// $router->add('GET', '/api/assets/{id}', [AssetController::class, 'show']);
+
 
 // --- Transaction Routes (異動) ---
 $router->add('POST', '/api/transactions', [TransactionController::class, 'store']);
+
 
 // --- Maintenance Routes ---
 // 送修 (POST)

@@ -1,15 +1,18 @@
 <?php
 include_once __DIR__ . '/../classes/AssetBatch.php';
+include_once __DIR__ . '/../classes/AssetItem.php';
 include_once __DIR__ . '/../classes/AuthMiddleware.php';
 
 class AssetController {
     private $db;
-    private $asset;
+    private $assetBatch;
+    private $assetItem;
     private $auth;
 
     public function __construct($db) {
         $this->db = $db;
-        $this->asset = new AssetBatch($db);
+        $this->assetBatch = new AssetBatch($db);
+        $this->assetItem = new AssetItem($db);
         $this->auth = new AuthMiddleware($db);
     }
 
@@ -35,36 +38,36 @@ class AssetController {
         }
 
         // 資料對應，將資料塞入 Model 
-        $this->asset->batch_no = $data->batch_no;
-        $this->asset->fund_source = $data->fund_source ?? null;
-        $this->asset->purchase_date = $data->purchase_date ?? null;
-        $this->asset->life_years = $data->life_years ?? null;
-        $this->asset->accounting_items = $data->accounting_items ?? null;
-        $this->asset->location = $data->location ?? null; // 這是 asset_batches 的 location ID
+        $this->assetBatch->batch_no = $data->batch_no;
+        $this->assetBatch->fund_source = $data->fund_source ?? null;
+        $this->assetBatch->purchase_date = $data->purchase_date ?? null;
+        $this->assetBatch->life_years = $data->life_years ?? null;
+        $this->assetBatch->accounting_items = $data->accounting_items ?? null;
+        $this->assetBatch->location = $data->location ?? null; // 這是 asset_batches 的 location ID
 
-        $this->asset->pre_property_no = $data->pre_property_no ?? '';
-        $this->asset->suf_start_no = intval($data->suf_start_no);
-        $this->asset->suf_end_no = intval($data->suf_end_no);
-        
-        $this->asset->category = $data->category;
-        $this->asset->asset_name = $data->asset_name;
-        $this->asset->brand = $data->brand ?? '';
-        $this->asset->model = $data->model ?? '';
-        $this->asset->spec = $data->spec ?? '';
-        
-        $this->asset->unit = $data->unit;
-        $this->asset->unit_price = $data->unit_price ?? 0;
+        $this->assetBatch->pre_property_no = $data->pre_property_no ?? '';
+        $this->assetBatch->suf_start_no = intval($data->suf_start_no);
+        $this->assetBatch->suf_end_no = intval($data->suf_end_no);
+   
+        $this->assetBatch->category = $data->category;
+        $this->assetBatch->asset_name = $data->asset_name;
+        $this->assetBatch->brand = $data->brand ?? '';
+        $this->assetBatch->model = $data->model ?? '';
+        $this->assetBatch->spec = $data->spec ?? '';
+       
+        $this->assetBatch->unit = $data->unit;
+        $this->assetBatch->unit_price = $data->unit_price ?? 0;
 
         try {
             // 執行入庫，帶入操作者 ID 以記錄誰執行的動作
-            if($this->asset->create($currentUser['id'])) {
+            if($this->assetBatch->create($currentUser['id'])) {
                 http_response_code(201);
                 echo json_encode([
                     "message" => "資產入庫成功",
                     "data" => [
-                        "batch_id" => $this->asset->id,
-                        "batch_no" => $this->asset->batch_no,
-                        "qty" => ($this->asset->suf_end_no - $this->asset->suf_start_no + 1)
+                        "batch_id" => $this->assetBatch->id,
+                        "batch_no" => $this->assetBatch->batch_no,
+                        "qty" => ($this->assetBatch->suf_end_no - $this->assetBatch->suf_start_no + 1)
                     ]
                 ]);
             }
@@ -75,9 +78,58 @@ class AssetController {
         }
     }
 
-    // index 方法也需要根據新的 suf_start_no/end_no 做 SQL 的微調，這裡先省略
+    // GET /api/assets (資產列表 - 進階查詢)
     public function index() {
-        // ... (保留原本架構，但 SELECT 查詢要改抓 suf_start_no 和 suf_end_no)
+        $currentUser = $this->auth->authenticate();
+
+        // 接收 GET 參數
+        $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+        $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
+
+        // 篩選條件
+        $filters = [
+            'keyword'  => $_GET['keyword'] ?? null,
+            'status'   => $_GET['status'] ?? null,   // 例如: '閒置', '維修中'
+            'owner_id' => $_GET['owner_id'] ?? null, // 例如: 篩選 '我的資產'
+            'category' => $_GET['category'] ?? null  // 例如: '非消耗品'
+        ];
+
+        // 呼叫 Model 查詢
+        $result = $this->assetItem->search($filters, $page, $limit);
+
+        // 回傳 JSON
+        http_response_code(200);
+        echo json_encode([
+            "message" => "查詢成功",
+            "meta" => [
+                "total_records" => $result['total'],
+                "current_page"  => $result['page'],
+                "total_pages"   => $result['total_pages'],
+                "limit"         => $result['limit']
+            ],
+            "data" => $result['data']
+        ]);
+    }
+
+
+    // GET /api/assets/{id} (單一資產詳情)
+    public function show($params) {
+        $id = $params['id'] ?? null;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(["message" => "缺少 ID"]);
+            return;
+        }
+
+        $item = $this->assetItem->readOne($id);
+
+        if ($item) {
+            http_response_code(200);
+            echo json_encode(["data" => $item]);
+        } else {
+            http_response_code(404);
+            echo json_encode(["message" => "找不到該資產"]);
+        }
     }
 
 }
