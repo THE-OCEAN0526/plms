@@ -13,100 +13,72 @@ class AssetController {
         $this->auth = new AuthMiddleware($db);
     }
 
-    // GET /api/assets (對應原本的 batch_list.php)
-    public function index() {
-        // 驗證 Token (如果不需要驗證可拿掉)
-        $this->auth->authenticate();
-
-        // 接收參數
-        $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
-        $limit = isset($_GET['limit']) ? intval($_GET['limit']) : 10;
-        $keyword = isset($_GET['keyword']) ? $_GET['keyword'] : "";
-
-        $from_record_num = ($page - 1) * $limit;
-
-        $stmt = $this->asset->readPaging($keyword, $from_record_num, $limit);
-        $num = $stmt->rowCount();
-        $total_rows = $this->asset->countAll($keyword);
-        $total_pages = ceil($total_rows / $limit);
-
-        if($num > 0) {
-            $assets_arr = ["data" => [], "meta" => []];
-            $assets_arr["meta"] = [
-                "total_records" => $total_rows,
-                "current_page"  => $page,
-                "total_pages"   => $total_pages,
-                "limit"         => $limit
-            ];
-
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $item = [
-                    "id" => $row['id'],
-                    "batch_no" => $row['batch_no'],
-                    "asset_name" => $row['asset_name'],
-                    "category" => $row['category'],
-                    "brand" => $row['brand'],
-                    "model" => $row['model'],
-                    "qty" => $row['qty_purchased'],
-                    "unit" => $row['unit'],
-                    "total_price" => $row['total_price'],
-                    "purchase_date" => $row['purchase_date'],
-                    "property_range" => $row['pre_property_no'] . " " . $row['suf_property_no']
-                ];
-                array_push($assets_arr["data"], $item);
-            }
-            echo json_encode($assets_arr);
-        } else {
-            echo json_encode([
-                "message" => "查無資料", 
-                "data" => [],
-                "meta" => ["total_records" => 0, "current_page" => $page, "total_pages" => 0]
-            ]);
-        }
-    }
-
-    // POST /api/assets (對應原本的 batch_create.php)
+    // POST /api/assets (資產入庫)
     public function store() {
-        $currentUser = $this->auth->authenticate(); // 確保已登入
-        
+        // 驗證使用者身份，並取得當前操作者
+        $currentUser = $this->auth->authenticate();
+
+        // 接收輸入資料
         $data = json_decode(file_get_contents("php://input"));
 
-        // 簡易驗證
-        if(empty($data->batch_no) || empty($data->asset_name) || empty($data->qty_purchased)) {
+        // 必填檢查
+        if(empty($data->batch_no) || empty($data->asset_name) || !isset($data->suf_start_no) || !isset($data->suf_end_no)) {
             http_response_code(400);
-            echo json_encode(["message" => "資料不完整，批號、品名、數量為必填"]);
+            echo json_encode(["message" => "資料不完整：批號、品名、起始號、結束號為必填"]);
             return;
         }
 
-        // 將資料塞入 Model (這裡配合你的資料庫更新)
+        if (intval($data->suf_start_no) > intval($data->suf_end_no)) {
+            http_response_code(400);
+            echo json_encode(["message" => "編號範圍錯誤：起始號不能大於結束號"]);
+            return;
+        }
+
+        // 資料對應，將資料塞入 Model 
         $this->asset->batch_no = $data->batch_no;
-        $this->asset->asset_name = $data->asset_name;
-        $this->asset->qty_purchased = $data->qty_purchased;
-        $this->asset->unit_price = $data->unit_price ?? 0;
+        $this->asset->fund_source = $data->fund_source ?? null;
+        $this->asset->purchase_date = $data->purchase_date ?? null;
+        $this->asset->life_years = $data->life_years ?? null;
+        $this->asset->accounting_items = $data->accounting_items ?? null;
+        $this->asset->location = $data->location ?? null; // 這是 asset_batches 的 location ID
+
+        $this->asset->pre_property_no = $data->pre_property_no ?? '';
+        $this->asset->suf_start_no = intval($data->suf_start_no);
+        $this->asset->suf_end_no = intval($data->suf_end_no);
+        
         $this->asset->category = $data->category;
+        $this->asset->asset_name = $data->asset_name;
+        $this->asset->brand = $data->brand ?? '';
+        $this->asset->model = $data->model ?? '';
+        $this->asset->spec = $data->spec ?? '';
+        
         $this->asset->unit = $data->unit;
-        $this->asset->pre_property_no = $data->pre_property_no;
-        $this->asset->suf_property_no = $data->suf_property_no;
-        $this->asset->brand = $data->brand;
-        $this->asset->model = $data->model;
-        $this->asset->spec = $data->spec;
-        $this->asset->purchase_date = $data->purchase_date;
-        $this->asset->life_years = $data->life_years;
-        $this->asset->accounting_items = $data->accounting_items;
-        $this->asset->fund_source = $data->fund_source;
+        $this->asset->unit_price = $data->unit_price ?? 0;
 
         try {
-            if($this->asset->create()) {
+            // 執行入庫，帶入操作者 ID 以記錄誰執行的動作
+            if($this->asset->create($currentUser['id'])) {
                 http_response_code(201);
                 echo json_encode([
                     "message" => "資產入庫成功",
-                    "detail" => "已建立批次 {$this->asset->batch_no}"
+                    "data" => [
+                        "batch_id" => $this->asset->id,
+                        "batch_no" => $this->asset->batch_no,
+                        "qty" => ($this->asset->suf_end_no - $this->asset->suf_start_no + 1)
+                    ]
                 ]);
             }
         } catch (Exception $e) {
+            // 捕捉 Model 拋出的錯誤 (包含 Trigger 的錯誤訊息)
             http_response_code(400);
             echo json_encode(["message" => "入庫失敗：" . $e->getMessage()]);
         }
     }
+
+    // index 方法也需要根據新的 suf_start_no/end_no 做 SQL 的微調，這裡先省略
+    public function index() {
+        // ... (保留原本架構，但 SELECT 查詢要改抓 suf_start_no 和 suf_end_no)
+    }
+
 }
 ?>

@@ -35,7 +35,7 @@ try {
     $db->exec("SET FOREIGN_KEY_CHECKS = 1");
     echo "<span class='success'>✅ 資料表已清空。</span><br>";
 
-    // // 1. 建立使用者
+    // // // 1. 建立使用者
     // // -------------------------------------------------------------
     // $tokenVbird = bin2hex(random_bytes(32));
     // $tokenWang  = bin2hex(random_bytes(32));

@@ -6,176 +6,136 @@ class AssetBatch {
 
     // 屬性
     public $id;
-    public $batch_no;
+    public $batch_no;       
     public $pre_property_no;
-    public $suf_property_no;
-    public $category; 
-    public $asset_name;
-    public $brand;
-    public $model;
-    public $spec;
-    public $qty_purchased;
-    public $unit; 
-    public $unit_price;
-    // public $total_price;
-    public $purchase_date;
-    public $life_years;
-    public $accounting_items;
-    public $fund_source;
-    public $add_date;
+    public $suf_start_no;   
+    public $suf_end_no;     
+    public $category;       
+    public $asset_name;    
+    public $brand;        
+    public $model;          
+    public $spec;          
+    public $unit;          
+    public $unit_price;    
+    public $location;       
+    public $purchase_date;  
+    public $life_years;    
+    public $accounting_items; 
+    public $fund_source;    
+
+    // 注意: qty_purchased 和 total_price 是資料庫自動生成 (Generated Columns)，不需要 PHP 插入
 
     public function __construct($db) {
         $this->conn = $db;
     }
 
     // 新增批次資產入庫
-    public function create() {
+    public function create($owner_id) {
         try {
-            // 1. 前置檢查：解析財產編號後綴範圍
-            // 預期格式 "11521-11540"
-            $range_parts = explode('-', $this->suf_property_no);
-            if (count($range_parts) !== 2) throw new Exception("編號範圍格式錯誤");
+            // 基本驗證
+            // 計算數量 (雖然 DB 會自動算，但這邊需要用迴圈產生單品)
+            $qty = $this->suf_end_no - $this->suf_start_no + 1;
 
-            $start_no = intval($range_parts[0]);
-            $end_no   = intval($range_parts[1]);
+            if($qty <= 0) {
+                throw new Exception("編號範圍無效 (結束編號必須大於起始編號)");
+            }
 
-            // 計算範圍內的數量
-            $range_count = $end_no - $start_no + 1;
-
-            if ($range_count <= 0) throw new Exception("編號範圍無效");
-            // 範圍數量必須等於購買數量
-            if ($range_count != $this->qty_purchased) throw new Exception("數量不符");
-
-            // 2. 開始交易 
-            // 關閉自動存檔 (Auto-Commit) 保護資料一致性
+            // 開始處理入庫邏輯
             $this->conn->beginTransaction();
 
+            // 插入批次資料(asset_batches)
+            // 注意：不插入 qty_purchased, total_price, add_date(資料庫無預設則需補NOW())
             $query = "INSERT INTO " . $this->table_batch . " 
                       SET 
                         batch_no        = :batch_no,
                         pre_property_no = :pre_property_no,
-                        suf_property_no = :suf_property_no,
+                        suf_start_no    = :suf_start_no,
+                        suf_end_no      = :suf_end_no,
                         category        = :category,
                         asset_name      = :asset_name,
                         brand           = :brand,
                         model           = :model,
                         spec            = :spec,
-                        qty_purchased   = :qty,
                         unit            = :unit,
                         unit_price      = :unit_price,
+                        location        = :location,
                         purchase_date   = :purchase_date,
                         life_years      = :life_years,
                         accounting_items= :accounting_items,
                         fund_source     = :fund_source,
-                        add_date        = NOW()";
-            
+                        add_date        = CURDATE()";
+
             $stmt = $this->conn->prepare($query);
 
-            // 清理輸入
-            $this->batch_no = htmlspecialchars(strip_tags($this->batch_no));
-            $this->asset_name = htmlspecialchars(strip_tags($this->asset_name));
-            
-            // 綁定所有參數 (全都是必填)
+            // 綁定參數
             $stmt->bindParam(":batch_no", $this->batch_no);
-            $stmt->bindParam(":asset_name", $this->asset_name);
-            $stmt->bindParam(":qty", $this->qty_purchased);
-            $stmt->bindParam(":unit_price", $this->unit_price);
-            $stmt->bindParam(":category", $this->category);
-            $stmt->bindParam(":unit", $this->unit);
             $stmt->bindParam(":pre_property_no", $this->pre_property_no);
-            $stmt->bindParam(":suf_property_no", $this->suf_property_no);
+            $stmt->bindParam(":suf_start_no", $this->suf_start_no);
+            $stmt->bindParam(":suf_end_no", $this->suf_end_no);
+            $stmt->bindParam(":category", $this->category);
+            $stmt->bindParam(":asset_name", $this->asset_name);
             $stmt->bindParam(":brand", $this->brand);
             $stmt->bindParam(":model", $this->model);
             $stmt->bindParam(":spec", $this->spec);
+            $stmt->bindParam(":unit", $this->unit);
+            $stmt->bindParam(":unit_price", $this->unit_price);
+            $stmt->bindParam(":location", $this->location);
             $stmt->bindParam(":purchase_date", $this->purchase_date);
             $stmt->bindParam(":life_years", $this->life_years);
             $stmt->bindParam(":accounting_items", $this->accounting_items);
             $stmt->bindParam(":fund_source", $this->fund_source);
 
-            
             $stmt->execute();
 
             // 取得剛建立的批次 ID
             $new_batch_id = $this->conn->lastInsertId();
+            $this->id = $new_batch_id; // 回存 ID 以便 Controller 使用
 
-            // 3. 自動產生單品
+            // 自動產生單品(asset_items)
             $queryItem = "INSERT INTO " . $this->table_item . "
-                          SET batch_id=:batch_id, sub_no=:sub_no";
+                          SET 
+                              batch_id = :batch_id, 
+                              sub_no = :sub_no,
+                              status = '閒置',
+                              item_condition = '好',
+                              owner_id = :owner_id,
+                              location = NULL, 
+                              updated_at = NOW()";
+            // PS: location 設為 NULL，代表參考 Batch 的位置；borrower_id 預設 NULL
 
             $stmtItem = $this->conn->prepare($queryItem);
 
             // 產生單品資料
-            for ($i = $start_no; $i <= $end_no; $i++) {
+            for($i = $this->suf_start_no; $i <= $this->suf_end_no; $i++) {
                 $stmtItem->bindParam(":batch_id", $new_batch_id);
                 $stmtItem->bindParam(":sub_no", $i);
+                $stmtItem->bindParam(":owner_id", $owner_id); // 財產擁有人
                 $stmtItem->execute();
             }
 
+            // 提交交易
             $this->conn->commit();
             return true;
-
         } catch (Exception $e) {
-            // 1: 先檢查是否有交易正在進行，才 Rollback
-            if ($this->conn->inTransaction()) $this->conn->rollBack();
-            
-            // 2: 在這裡攔截 SQL 錯誤並翻譯
-            if ($e instanceof PDOException) {
-                // 取得錯誤代碼
-                $err = $e->errorInfo[1] ?? 0;
-                if ($err == 1062) throw new Exception("入庫失敗：此財產編號組合已存在。");
-                if ($err == 1265) throw new Exception("入庫失敗：單位或類別不符。");
+            // 發生錯誤，回滾交易
+            if ($this->conn->inTransaction()) {
+                $this->conn->rollBack();
             }
-            // 為了讓 API 能顯示具體錯誤，把 Exception 往外拋
-            throw $e; 
+
+            // 處理 MySQL 錯誤代碼 (例如 Trigger 擋下的重疊)
+            if($e instanceof PDOException) {
+                // Trigger 拋出的 SQLSTATE '45000'
+                if ($e->getCode() == '45000') {
+                    throw new Exception($e->getMessage()); // 直接顯示 Trigger 的錯誤訊息
+                }
+                $errInfo = $e->errorInfo;
+                if (isset($errInfo[1]) && $errInfo[1] == 1062) {
+                    throw new Exception("入庫失敗：資料重複 (Unique constraint violation)。");
+                }
+            }
+            throw $e;
         }
-    }
-
-    // 取得所有批次資料
-    public function readPaging($keyword, $from_record_num, $records_per_page) {
-        $query = "SELECT * FROM " . $this->table_batch;
-
-        // 加入搜尋條件
-        if (!empty($keyword)) {
-            $query .= " WHERE asset_name LIKE :keyword OR batch_no LIKE :keyword OR pre_property_no LIKE :keyword OR suf_property_no LIKE :keyword";
-        }
-
-        // 加入排序與分頁
-        $query .= " ORDER BY id DESC LIMIT :from, :limit";
-
-        $stmt = $this->conn->prepare($query);
-
-    
-        if (!empty($keyword)) {
-            $keyword = "%{$keyword}%"; // 模糊搜尋
-            $stmt->bindParam(":keyword", $keyword);
-        }
-
-        // 綁定分頁參數
-        $stmt->bindParam(":from", $from_record_num, PDO::PARAM_INT);
-        $stmt->bindParam(":limit", $records_per_page, PDO::PARAM_INT);
-
-        $stmt->execute();
-        return $stmt;
-    }
-
-    // 3. 計算總筆數 (為了前端分頁條)
-    public function countAll($keyword) {
-        $query = "SELECT COUNT(*) as total FROM " . $this->table_batch;
-
-        if (!empty($keyword)) {
-            $query .= " WHERE asset_name LIKE :keyword OR batch_no LIKE :keyword OR pre_property_no LIKE :keyword OR suf_property_no LIKE :keyword";
-        }
-
-        $stmt = $this->conn->prepare($query);
-
-        if (!empty($keyword)) {
-            $keyword = "%{$keyword}%";
-            $stmt->bindParam(":keyword", $keyword);
-        }
-
-        $stmt->execute();
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        return $row['total'];
-    }
+  }
+           
 }
 ?>

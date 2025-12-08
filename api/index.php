@@ -26,9 +26,11 @@ include_once '../config/Database.php';
 include_once '../classes/Router.php';
 
 // 引入控制器
+include_once '../controllers/DashboardController.php';
 include_once '../controllers/AuthController.php';
 include_once '../controllers/AssetController.php';
-include_once '../controllers/DashboardController.php';
+include_once '../controllers/MaintenanceController.php';
+include_once '../controllers/TransactionController.php';
 
 // 4. 初始化資料庫
 $database = new Database();
@@ -41,17 +43,29 @@ $router = new Router();
 $router->add('POST', '/api/auth/login', [AuthController::class, 'login']);
 $router->add('POST', '/api/auth/register', [AuthController::class, 'register']);
 
+// --- Dashboard Routes ---
+$router->add('GET', '/api/dashboard/summary', [DashboardController::class, 'summary']);
+
 // --- Asset Routes (RESTful 風格) ---
-// 取得列表 (GET /api/assets)
-$router->add('GET', '/api/assets', [AssetController::class, 'index']);
+// // 取得列表 (GET /api/assets)
+// $router->add('GET', '/api/assets', [AssetController::class, 'index']);
 // 新增資產 (POST /api/assets)
 $router->add('POST', '/api/assets', [AssetController::class, 'store']);
 // 未來可擴充: 取得單一資產 (GET /api/assets/{id})
 // $router->add('GET', '/api/assets/{id}', [AssetController::class, 'show']);
 
-// --- Dashboard Routes ---
-$router->add('GET', '/api/dashboard/summary', [DashboardController::class, 'summary']);
+// --- Transaction Routes (異動) ---
+$router->add('POST', '/api/transactions', [TransactionController::class, 'store']);
 
+// --- Maintenance Routes ---
+// 送修 (POST)
+$router->add('POST', '/api/maintenances', [MaintenanceController::class, 'store']);
+
+// 結案/修改 (PUT /api/maintenances/{id})
+$router->add('PUT', '/api/maintenances/{id}', [MaintenanceController::class, 'update']);
+
+// 刪除/取消 (DELETE /api/maintenances/{id})
+$router->add('DELETE', '/api/maintenances/{id}', [MaintenanceController::class, 'destroy']);
 
 // 6. 執行分派
 // 取得目前的 URI
