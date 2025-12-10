@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 
 // 自動載入
-sql_autoload_register(function ($className)) {
+spl_autoload_register(function ($className)) {
     $paths = [
         '../config/',
         '../classes/',
@@ -52,7 +52,7 @@ sql_autoload_register(function ($className)) {
 
     foreach ($paths as $path) {
         $file = $path . $className . '.php';
-        if (fiile_exists($file)) {
+        if (file_exists($file)) {
             include_once $file;
             return;
 

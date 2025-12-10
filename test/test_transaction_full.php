@@ -148,17 +148,29 @@ function printResult($item, $action, $res) {
     }
 }
 
-function sendRequest($method, $url, $data, $token = null) {
-    $ch = curl_init($url);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    $headers = ['Content-Type: application/json'];
-    if ($token) $headers[] = "Authorization: Bearer $token";
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+function sendRequest($method, $url, $data = [], $token = null) {
+    // ... (原本的 cURL 設定) ...
+    
     $result = curl_exec($ch);
-    $info = curl_getinfo($ch);
+    $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
-    return ['http_code' => $info['http_code'], 'body' => $result];
+
+    // 【加入這段 Debug】: 如果解析失敗，印出原始回應讓我們看
+    $jsonCheck = json_decode($result, true);
+    if ($jsonCheck === null && $code != 204) {
+        echo "<div style='background:red; color:white; padding:10px;'>";
+        echo "<h3>💥 API 回傳了非 JSON 資料！</h3>";
+        echo "<strong>URL:</strong> $url <br>";
+        echo "<strong>HTTP Code:</strong> $code <br>";
+        echo "<strong>原始回應:</strong> <pre>" . htmlspecialchars($result) . "</pre>";
+        echo "</div>";
+    }
+
+    // 原本的除錯功能保留
+    if ($code >= 400) {
+       // ...
+    }
+    
+    return ['http_code' => $code, 'body' => $result];
 }
 ?>
