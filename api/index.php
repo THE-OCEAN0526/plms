@@ -1,82 +1,104 @@
 <?php
-// 1. 環境設定
+// 環境設定
 // === 強力除錯模式 ===
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 ini_set('display_startup_errors', 1);
 error_reporting(E_ALL);
 mb_internal_encoding("UTF-8");
 
-// 2. CORS 設定 (全域處理)
+// CORS 設定 (全域處理)
 header("Access-Control-Allow-Origin: *");
 header("Content-Type: application/json; charset=UTF-8");
 header("Access-Control-Allow-Methods: POST, GET, PUT, DELETE, OPTIONS");
 header("Access-Control-Max-Age: 3600");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 
+// 全域例外處理
+set_exception_handler(function ($e)) {
+    http_response_code(500);
+    echo json_encode([
+        "error" => true,
+        "message" => $e->getMessage()
+        "file" => $e->getFile(),
+        "line" => $e->getLine()
+    ]);
+    exit;
+}
+
+// 全域錯誤處理 把普通的 Warning/Notice 轉換成例外
+set_error_handler(function ($severity, $message, $file, $line) {
+    if (!(error_reporting() & $severity)) {
+        return;
+    }
+    // 拋出例外，讓下面的 Exception Handler 接手
+    throw new ErrorException($message, 0, $severity, $file, $line);
+});
+
 // 3. 處理 "OPTIONS" 預檢請求 (Preflight Request)
 // 瀏覽器在發送真正的請求前，會先送一個 OPTIONS 請求來探路
-// 如果這裡不直接回傳 200，瀏覽器會以為伺服器壞了
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
     exit();
 }
 
-// 3. 引入核心檔案
-include_once '../config/Database.php';
-include_once '../classes/Router.php';
 
-// 引入控制器
-include_once '../controllers/DashboardController.php';
-include_once '../controllers/AuthController.php';
-include_once '../controllers/AssetController.php';
-include_once '../controllers/MaintenanceController.php';
-include_once '../controllers/TransactionController.php';
+// 自動載入
+sql_autoload_register(function ($className)) {
+    $paths = [
+        '../config/',
+        '../classes/',
+        '../controllers/'
+    ];
 
-// 4. 初始化資料庫
+    foreach ($paths as $path) {
+        $file = $path . $className . '.php';
+        if (fiile_exists($file)) {
+            include_once $file;
+            return;
+
+        }
+    }
+}
+
+
+// 初始化資料庫
 $database = new Database();
 $db = $database->getConnection();
 
-// 5. 設定路由
-$router = new Router();
+// 設定路由
+$router = new Router($db);
 
 
-// --- Auth Routes ---
-$router->add('POST', '/api/auth/login', [AuthController::class, 'login']);
-$router->add('POST', '/api/auth/register', [AuthController::class, 'register']);
+// --- Auth Routes (登入/註冊) ---
+$router->add('POST', '/api/auth/login', 'AuthController@login'); 
+$router->add('POST', '/api/auth/register', 'AuthController@register');
 
-// --- Dashboard Routes ---
-$router->add('GET', '/api/dashboard/summary', [DashboardController::class, 'summary']);
+// --- Dashboard Routes (主控台) ---
+$router->add('GET', '/api/dashboard/summary', 'DashboardController@summary');
 
-// 取得列表 (GET /api/assets)
-$router->add('GET', '/api/assets', [AssetController::class, 'index']);
-
-// 取得單一資產 (GET /api/assets/{id})
-$router->add('GET', '/api/assets/{id}', [AssetController::class, 'show']);
-
-
-
-// 新增資產 (POST /api/assets)
-$router->add('POST', '/api/assets', [AssetController::class, 'store']);
+// --- Asset Routes (顯示資產) ---
+// 取得列表
+$router->add('GET', '/api/assets', 'AssetController@index');
+// 取得單一資產
+$router->add('GET', '/api/assets/{id}', 'AssetController@show');
+// 取得資產履歷
+$router->add('GET', '/api/assets/{id}/history', 'AssetController@history');
+// 新增資產
+$router->add('POST', '/api/assets', 'AssetController@store');
 
 
 // --- Transaction Routes (異動) ---
-$router->add('POST', '/api/transactions', [TransactionController::class, 'store']);
+$router->add('POST', '/api/transactions', 'TransactionController@store');
 
 
-// --- Maintenance Routes ---
-// 送修 (POST)
-$router->add('POST', '/api/maintenances', [MaintenanceController::class, 'store']);
+// --- Maintenance Routes (維修) ---
+// 送修
+$router->add('POST', '/api/maintenances', 'MaintenanceController@store');
+// 結案/修改 
+$router->add('PUT', '/api/maintenances/{id}', 'MaintenanceController@update');
+// 刪除/取消 
+$router->add('DELETE', '/api/maintenances/{id}', 'MaintenanceController@destroy');
 
-// 結案/修改 (PUT /api/maintenances/{id})
-$router->add('PUT', '/api/maintenances/{id}', [MaintenanceController::class, 'update']);
-
-// 刪除/取消 (DELETE /api/maintenances/{id})
-$router->add('DELETE', '/api/maintenances/{id}', [MaintenanceController::class, 'destroy']);
-
-// 6. 執行分派
-// 取得目前的 URI
-$uri = $_SERVER['REQUEST_URI'];
-$method = $_SERVER['REQUEST_METHOD'];
-
-$router->dispatch($method, $uri);
+// 執行分派
+$router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);
 ?>

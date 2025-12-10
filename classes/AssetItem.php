@@ -11,8 +11,7 @@ class AssetItem {
     public function search($filters = [], $page = 1, $limit = 10) {
         $offset = ($page - 1) * $limit;
 
-        // 建構 SQL 查詢
-        // 需要 JOIN 批次表(取得品名)、地點表、使用者表(取得擁有人與借用人姓名)
+        // 1. 建構 SQL 查詢
         $query = "SELECT 
                     i.id, 
                     i.sub_no, 
@@ -25,36 +24,32 @@ class AssetItem {
                     b.spec,
                     l.name as location_name,
                     u_owner.name as owner_name,
-                    IFNULL(i.borrower_name, u_borrower.name) as current_user /* 借用人: 優先顯示紀錄的姓名(無帳號)，若無則顯示關聯帳號的姓名 */
+                    IFNULL(i.borrower_name, u_borrower.name) as `current_user`
                   FROM " . $this->table . " i
                   JOIN asset_batches b ON i.batch_id = b.id
                   LEFT JOIN locations l ON i.location = l.id
                   LEFT JOIN users u_owner ON i.owner_id = u_owner.id
                   LEFT JOIN users u_borrower ON i.borrower_id = u_borrower.id";
 
-        // 動態加入篩選條件
-        $conditions = [];
-        $params = [];
+        // 2. 動態加入篩選條件
+        $conditions = []; // 條件
+        $params = []; // 參數
 
-        // A. 關鍵字搜尋 (查 財產編號、品名、廠牌、型號)
         if (!empty($filters['keyword'])) {
             $conditions[] = "(i.sub_no LIKE :keyword OR b.asset_name LIKE :keyword OR b.brand LIKE :keyword OR b.model LIKE :keyword)";
             $params[':keyword'] = "%" . $filters['keyword'] . "%";
         }
 
-        // B. 狀態篩選 (例如: 只看 '閒置' 或 '維修中')
         if (!empty($filters['status'])) {
             $conditions[] = "i.status = :status";
             $params[':status'] = $filters['status'];
         }
 
-        // C. 擁有者篩選 (例如: 只看 '我的保管')
         if (!empty($filters['owner_id'])) {
             $conditions[] = "i.owner_id = :owner_id";
             $params[':owner_id'] = $filters['owner_id'];
         }
         
-        // D. 資產類別篩選 (例如: 只看 '非消耗品')
         if (!empty($filters['category'])) {
             $conditions[] = "b.category = :category";
             $params[':category'] = $filters['category'];
@@ -65,29 +60,34 @@ class AssetItem {
             $query .= " WHERE " . implode(" AND ", $conditions);
         }
 
-        // 加入排序 (預設依更新時間排序，方便看最近變動)
+        // 加入排序
         $query .= " ORDER BY i.id DESC";
 
-        // 執行分頁查詢
-        // 為了取得總筆數 (Total Count)，需要先算一次 (或是用 SQL_CALC_FOUND_ROWS)
+        // 3. 執行分頁查詢
+        
+        // A. 先算總筆數 (Total Count)
         $countQuery = "SELECT COUNT(*) FROM " . $this->table . " i JOIN asset_batches b ON i.batch_id = b.id WHERE " . (count($conditions) > 0 ? implode(" AND ", $conditions) : "1");
         $stmtCount = $this->conn->prepare($countQuery);
         $stmtCount->execute($params);
         $total_rows = $stmtCount->fetchColumn();
 
-        // 加上 LIMIT
-        $query .= " LIMIT :offset, :limit";
+        // B. 加上 LIMIT 設定分頁範圍 (跳過 0 筆，抓 10 筆 (第 1 ~ 10 筆))
+        $query .= " LIMIT " . (int)$offset . ", " . (int)$limit;
+        
         $stmt = $this->conn->prepare($query);
 
-        // 綁定所有參數
+        // 綁定篩選參數 (如果有)
         foreach ($params as $key => $val) {
             $stmt->bindValue($key, $val);
         }
-        // 綁定分頁 (必須是整數)
-        $stmt->bindValue(':offset', (int)$offset, PDO::PARAM_INT);
-        $stmt->bindValue(':limit', (int)$limit, PDO::PARAM_INT);
 
-        $stmt->execute();
+        // 執行查詢
+        try {
+            $stmt->execute();
+        } catch (PDOException $e) {
+            // 如果出錯，回傳空陣列或拋出更清楚的錯誤
+            throw new Exception("資料查詢失敗: " . $e->getMessage());
+        }
 
         return [
             "data" => $stmt->fetchAll(PDO::FETCH_ASSOC),
@@ -98,7 +98,7 @@ class AssetItem {
         ];
     }
     
-    // 讀取單一資產詳情 (包含基本資訊)
+    // 讀取單一資產詳情
     public function readOne($id) {
          $query = "SELECT 
                     i.*,
@@ -116,6 +116,82 @@ class AssetItem {
         $stmt->execute();
         
         return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
+
+    // 取得資產完整履歷 (異動 + 維修 + 入庫)
+    public function getHistory($id) {
+        $query = "
+            (
+                -- 1. 異動紀錄
+                SELECT 
+                    'Transaction' as source_type,
+                    t.action_date as event_date,
+                    t.action_type,
+                    u.name as operator,
+                    IFNULL(t.note, '') as description,
+                    l.name as location,
+                    t.id as sort_id
+                FROM asset_transactions t
+                LEFT JOIN users u ON t.borrower_id = u.id
+                LEFT JOIN locations l ON t.location_id = l.id
+                WHERE t.item_id = :id1
+            )
+            UNION ALL
+            (
+                -- 2. 維修紀錄 (送修)
+                SELECT 
+                    'Maintenance' as source_type,
+                    m.send_date as event_date,
+                    CONCAT(m.action_type, ' (送修)') as action_type,
+                    m.vendor as operator,
+                    '送廠維修' as description,
+                    NULL as location,
+                    m.id as sort_id
+                FROM asset_maintenance m
+                WHERE m.item_id = :id2 AND m.is_deleted = 0
+            )
+            UNION ALL
+            (
+                -- 3. 維修紀錄 (結案)
+                SELECT 
+                    'Maintenance_End' as source_type,
+                    m.finish_date as event_date,
+                    CONCAT(m.action_type, ' (結案)') as action_type,
+                    m.vendor as operator,
+                    CONCAT(m.result_status, ': ', IFNULL(m.maintain_result, '')) as description,
+                    NULL as location,
+                    m.id as sort_id
+                FROM asset_maintenance m
+                WHERE m.item_id = :id3 AND m.is_deleted = 0 AND m.finish_date IS NOT NULL
+            )
+            UNION ALL
+            (
+                -- 4. 【新增】入庫紀錄 (從 Batch 撈)
+                SELECT 
+                    'Ingest' as source_type,
+                    b.add_date as event_date, /* 或 purchase_date */
+                    '入庫' as action_type,
+                    '系統' as operator,
+                    CONCAT('批號: ', b.batch_no) as description,
+                    l.name as location,
+                    0 as sort_id /* 讓它排在同一天的最前面 */
+                FROM asset_items i
+                JOIN asset_batches b ON i.batch_id = b.id
+                LEFT JOIN locations l ON b.location = l.id
+                WHERE i.id = :id4
+            )
+            -- 這裡改成 ASC (從古至今) 比較像看故事
+            ORDER BY event_date ASC, sort_id ASC
+        ";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":id1", $id);
+        $stmt->bindParam(":id2", $id);
+        $stmt->bindParam(":id3", $id);
+        $stmt->bindParam(":id4", $id);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 }
 ?>

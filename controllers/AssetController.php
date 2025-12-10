@@ -90,8 +90,8 @@ class AssetController {
         $filters = [
             'keyword'  => $_GET['keyword'] ?? null,
             'status'   => $_GET['status'] ?? null,   // 例如: '閒置', '維修中'
-            'owner_id' => $_GET['owner_id'] ?? null, // 例如: 篩選 '我的資產'
-            'category' => $_GET['category'] ?? null  // 例如: '非消耗品'
+            'category' => $_GET['category'] ?? null,  // 例如: '非消耗品'
+            'owner_id' => $currentUser['id'], // 只看自己的資產
         ];
 
         // 呼叫 Model 查詢
@@ -102,6 +102,7 @@ class AssetController {
         echo json_encode([
             "message" => "查詢成功",
             "meta" => [
+                "user_scope"    => $currentUser['name'],
                 "total_records" => $result['total'],
                 "current_page"  => $result['page'],
                 "total_pages"   => $result['total_pages'],
@@ -130,6 +131,40 @@ class AssetController {
             http_response_code(404);
             echo json_encode(["message" => "找不到該資產"]);
         }
+    }
+
+    // GET /api/assets/{id}/history (資產履歷 - 整合異動與維修紀錄)
+    public function history($params) {
+        $this->auth->authenticate(); 
+
+        $id = $params['id'] ?? null;
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(["message" => "缺少 ID"]);
+            return;
+        }
+
+        // 1. 先確認資產存在
+        $asset = $this->assetItem->readOne($id);
+        if (!$asset) {
+            http_response_code(404);
+            echo json_encode(["message" => "找不到該資產"]);
+            return;
+        }
+
+        // 2. 呼叫 Model 撈取履歷 (Union 查詢)
+        $history = $this->assetItem->getHistory($id);
+
+        http_response_code(200);
+        echo json_encode([
+            "asset_info" => [
+                "id" => $asset['id'],
+                "sub_no" => $asset['sub_no'],
+                "name" => $asset['asset_name'],
+                "status" => $asset['status']
+            ],
+            "timeline" => $history
+        ]);
     }
 
 }
