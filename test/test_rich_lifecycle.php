@@ -179,12 +179,17 @@ function sendRequest($method, $url, $data = [], $token = null) {
     $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    // 【新增】除錯功能：如果狀態碼是錯誤的 (4xx, 5xx)，顯示錯誤內容
+    // 檢查是否為 4xx 或 5xx 錯誤
     if ($code >= 400) {
         echo "<div style='background:#f8d7da; color:#721c24; padding:10px; border:1px solid #f5c6cb; margin:10px 0;'>";
         echo "<b>⚠️ API Error ($url) - Code: $code</b><br>";
         echo "<pre>" . htmlspecialchars($result) . "</pre>";
         echo "</div>";
+    }
+
+    $json = json_decode($result, true);
+    if ($json === null && $code < 400 && !empty($result)) {
+        echo "<div style='background:orange; color:white; padding:5px;'>⚠️ API 回傳了無效的 JSON: <pre>" . htmlspecialchars($result) . "</pre></div>";
     }
     
     return ['http_code' => $code, 'body' => $result];

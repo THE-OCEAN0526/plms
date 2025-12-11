@@ -14,16 +14,16 @@ header("Access-Control-Max-Age: 3600");
 header("Access-Control-Allow-Headers: Content-Type, Access-Control-Allow-Headers, Authorization, X-Requested-With");
 
 // 全域例外處理
-set_exception_handler(function ($e)) {
+set_exception_handler(function ($e) {
     http_response_code(500);
     echo json_encode([
         "error" => true,
-        "message" => $e->getMessage()
+        "message" => $e->getMessage(),
         "file" => $e->getFile(),
-        "line" => $e->getLine()
+        "line" => $e->getLine(),
     ]);
     exit;
-}
+});
 
 // 全域錯誤處理 把普通的 Warning/Notice 轉換成例外
 set_error_handler(function ($severity, $message, $file, $line) {
@@ -34,7 +34,7 @@ set_error_handler(function ($severity, $message, $file, $line) {
     throw new ErrorException($message, 0, $severity, $file, $line);
 });
 
-// 3. 處理 "OPTIONS" 預檢請求 (Preflight Request)
+// 處理 "OPTIONS" 預檢請求 (Preflight Request)
 // 瀏覽器在發送真正的請求前，會先送一個 OPTIONS 請求來探路
 if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
     http_response_code(200);
@@ -43,7 +43,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'OPTIONS') {
 
 
 // 自動載入
-spl_autoload_register(function ($className)) {
+spl_autoload_register(function ($className) {
     $paths = [
         '../config/',
         '../classes/',
@@ -58,7 +58,7 @@ spl_autoload_register(function ($className)) {
 
         }
     }
-}
+});
 
 
 // 初始化資料庫
