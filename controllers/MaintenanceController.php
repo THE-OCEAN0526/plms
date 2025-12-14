@@ -1,4 +1,5 @@
 <?php
+// controllers/MaintenanceController.php
 include_once __DIR__ . '/../classes/Maintenance.php';
 include_once __DIR__ . '/../classes/AuthMiddleware.php';
 
@@ -13,129 +14,114 @@ class MaintenanceController {
         $this->auth = new AuthMiddleware($db);
     }
 
-    // POST /api/maintenances (送修)
-    public function store() {
-        $this->auth->authenticate();
+    // =================================================================
+    // 1. 取得維修列表 (GET /api/maintenances)
+    // =================================================================
+    public function index() {
+        // 驗證登入 (視需求開啟)
+        // $this->auth->authenticate();
 
-        $data = json_decode(file_get_contents("php://input"));
-
-        // 驗證必填欄位 (送修時不需要 result)
-        if (empty($data->item_id) || empty($data->send_date) || empty($data->action_type)) {
-            http_response_code(400);
-            echo json_encode(["message" => "資料不完整 (需 item_id, send_date, action_type)"]);
-            return;
-        }
-
-        $this->maintenance->item_id = $data->item_id;
-        $this->maintenance->send_date = $data->send_date;
-        $this->maintenance->action_type = $data->action_type;
-        $this->maintenance->vendor = $data->vendor; // (廠商或學生名)
-
-        if ($this->maintenance->create()) {
-            http_response_code(201);
-            echo json_encode([
-                "message" => "送修單已建立",
-                "id" => $this->maintenance->id
-            ]);
-        } else {
-            http_response_code(400);
-            echo json_encode(["message" => "送修失敗"]);
-        }
-    }
-
-    // PUT /api/maintenances/{id} (結案/更新)
-    public function update($params) {
-        $this->auth->authenticate();
-
-        $id = $params['id'] ?? null;
-        if (!$id) {
-            http_response_code(400);
-            echo json_encode(["message" => "缺少 ID"]);
-            return;
-        }
-
-        $data = json_decode(file_get_contents("php://input"));
-
-        $this->maintenance->id = $id;
-        $this->maintenance->cost = $data->cost ?? 0;
-        $this->maintenance->finish_date = $data->finish_date ?? null;
-        $this->maintenance->maintain_result = $data->maintain_result ?? ''; 
-        $this->maintenance->result_status = $data->result_status ?? '';
-
-        // 檢查：如果要結案 (有 finish_date)，則必須填寫 結果說明 與 狀態判定
-        if (!empty($this->maintenance->finish_date)) {
-            if (empty($this->maintenance->maintain_result) || empty($this->maintenance->result_status)) {
-                http_response_code(400);
-                echo json_encode(["message" => "結案時必須填寫 '處理說明(maintain_result)' 與 '狀態判定(result_status)'"]);
-                return;
-            }
-        }
-
-        if ($this->maintenance->update()) {
-            http_response_code(200);
-            echo json_encode(["message" => "維修單更新成功"]);
-        } else {
-            http_response_code(503);
-            echo json_encode(["message" => "更新失敗"]);
-        }
-    }
-
-    // DELETE /api/maintenances/{id} (取消/刪除)
-    public function destroy($params) {
-        $this->auth->authenticate();
-
-        $id = $params['id'] ?? null;
-        if (!$id) {
-            http_response_code(400);
-            echo json_encode(["message" => "缺少 ID"]);
-            return;
-        }
-
-        $this->maintenance->id = $id;
-        
-        if ($this->maintenance->cancel()) {
-            http_response_code(200);
-            echo json_encode(["message" => "維修單已刪除，資產狀態已復原"]);
-        } else {
-            http_response_code(503);
-            echo json_encode(["message" => "刪除失敗"]);
-        }
-    }
-
-    // GET /api/maintenances
-    public function index () {
-        // 接收參數
         $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
         
+        // 接收前端傳來的篩選條件
         $filters = [
-            'keyword' => $_GET['keyword'] ?? null, // 搜尋廠商或資產
-            'status' => $_GET['status'] ?? null    // 'active' 或 'finished'
+            'keyword' => $_GET['keyword'] ?? null, // 搜尋廠商、故障原因...
+            'status' => $_GET['status'] ?? null    // 'active' (維修中) 或 'finished' (已結案)
         ];
 
         try {
             $result = $this->maintenance->readAll($filters, $page, $limit);
             echo json_encode($result);
         } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode(["message" => "查詢失敗", "error" => $e->getMessage()]);
+            $this->sendError(500, "查詢失敗: " . $e->getMessage());
         }
     }
 
-    // GET /api/maintenances/{id}
+    // =================================================================
+    // 2. 讀取單筆資料 (GET /api/maintenances/{id})
+    // =================================================================
     public function show($id) {
+        // $this->auth->authenticate();
+
         try {
             $data = $this->maintenance->readOne($id);
 
             if ($data) {
                 echo json_encode($data);
             } else {
-                http_response_code(404);
-                echo json_encode(["message" => "找不到此維修單"]);
+                $this->sendError(404, "找不到此維修單");
             }
         } catch (Exception $e) {
-            http_response_code(500);
-            echo json_encode(["message" => "查詢失敗", "error" => $e->getMessage()]);
+            $this->sendError(500, "查詢失敗: " . $e->getMessage());
         }
     }
+
+    // =================================================================
+    // 3. 新增維修單 (POST /api/maintenances)
+    // =================================================================
+    public function create() {
+        $this->auth->authenticate(); // 新增通常需要登入
+
+        $data = json_decode(file_get_contents("php://input"), true);
+
+        if (!$data) {
+            $this->sendError(400, "無效的 JSON 資料");
+            return;
+        }
+
+        // 簡單驗證
+        if (empty($data['item_id']) || empty($data['action_type'])) {
+            $this->sendError(400, "缺少必要欄位 (item_id, action_type)");
+            return;
+        }
+
+        // ★ 重點：直接把陣列傳給 Model
+        $newId = $this->maintenance->create($data);
+
+        if ($newId) {
+            http_response_code(201);
+            echo json_encode(["message" => "維修單建立成功", "id" => $newId]);
+        } else {
+            $this->sendError(500, "建立失敗，可能是該資產狀態不正確 (已在維修中?)");
+        }
+    }
+
+    // =================================================================
+    // 4. 更新/結案維修單 (PUT /api/maintenances/{id})
+    // =================================================================
+    public function update($id) {
+        $this->auth->authenticate();
+
+        $data = json_decode(file_get_contents("php://input"), true);
+
+        // ★ 重點：Model 的 update 現在很聰明，
+        // 傳 issue_description 就改描述，傳 finish_date 就結案，
+        // 所以 Controller 只要負責傳遞就好。
+        if ($this->maintenance->update($id, $data)) {
+            echo json_encode(["message" => "更新成功"]);
+        } else {
+            $this->sendError(500, "更新失敗 (可能沒有欄位變更或 ID 不存在)");
+        }
+    }
+
+    // =================================================================
+    // 5. 刪除維修單 (DELETE /api/maintenances/{id})
+    // =================================================================
+    public function delete($id) {
+        $this->auth->authenticate();
+
+        if ($this->maintenance->delete($id)) {
+            echo json_encode(["message" => "維修單已刪除 (資產狀態已還原)"]);
+        } else {
+            $this->sendError(500, "刪除失敗");
+        }
+    }
+
+    // --- 輔助函式：回傳錯誤 ---
+    private function sendError($code, $message) {
+        http_response_code($code);
+        echo json_encode(["message" => $message, "error" => $code]);
+    }
 }
+?>
