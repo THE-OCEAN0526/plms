@@ -102,6 +102,11 @@ $router->add('POST', '/api/maintenances', 'MaintenanceController@store');
 $router->add('PUT', '/api/maintenances/{id}', 'MaintenanceController@update');
 // 刪除/取消 
 $router->add('DELETE', '/api/maintenances/{id}', 'MaintenanceController@destroy');
+// 1. 取得列表 (搜尋、分頁)
+$router->add('GET', '/api/maintenances', 'MaintenanceController@index');
+
+// 2. 取得單筆資料 (點擊編輯時用)
+$router->add('GET', '/api/maintenances/{id}', 'MaintenanceController@show');
 
 // 執行分派
 $router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

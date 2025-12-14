@@ -141,4 +141,113 @@ class Maintenance {
             return false;
         }
     }
+
+    public function readAll ($filters = [], page = 1, $limit = 10) {
+        $offset = ($page - 1) * $limit;
+
+        $query = "SELECT 
+                    m.id,
+                    m.item_id,
+                    m.send_date,
+                    m.action_type,
+                    m.vendor,
+                    m.maintain_result,
+                    m.result_status,
+                    m.finish_date,
+                    m.cost,
+                    m.is_deleted,
+                    -- 資產資訊 (顯示用)
+                    b.asset_name,
+                    CONCAT(b.pre_property_no, '-', i.sub_no) as full_property_no,
+                    i.status as current_asset_status
+                  FROM " . $this->table . " m
+                  JOIN asset_items i ON m.item_id = i.id
+                  JOIN asset_batches b ON i.batch_id = b.id
+                  WHERE m.is_deleted = 0"; // 預設只顯示未刪除的
+
+        $conditions = [];
+        $params = [];
+
+        // --- 搜尋條件 ---
+        if (!empty($filters['keyword'])) {
+            // 搜尋範圍：廠商、處理說明、財產編號、品名
+            $conditions[] = "(
+                m.vendor LIKE :keyword OR 
+                m.maintain_result LIKE :keyword OR
+                b.asset_name LIKE :keyword OR
+                CONCAT(b.pre_property_no, '-', i.sub_no) LIKE :keyword
+            )";
+            $params[':keyword'] = "%" . $filters['keyword'] . "%";
+        }
+
+        // --- 狀態篩選 (進行中 / 已結案) ---
+        // 前端傳 'active' 代表維修中 (finish_date 是 NULL)
+        if (!empty($filters['status']) && $filters['status'] == 'active') {
+            $conditions[] = "m.finish_date IS NULL";
+        }
+        // 前端傳 'finished' 代表已結案 (finish_date 有值)
+        elseif (!empty($filters['status']) && $filters['status'] == 'finished') {
+            $conditions[] = "m.finish_date IS NOT NULL";
+        }
+
+        // 組合 SQL
+        if (count($conditions) > 0) {
+            $query .= " AND " . implode(" AND ", $conditions);
+        }
+
+        // 排序：預設依照送修日期 (新 -> 舊)
+        $query .= " ORDER BY m.send_date DESC, m.id DESC";
+
+        // --- 處理分頁 ---
+        
+        // A. 算總筆數
+        $countQuery = "SELECT COUNT(*) FROM " . $this->table . " m 
+                       JOIN asset_items i ON m.item_id = i.id
+                       JOIN asset_batches b ON i.batch_id = b.id
+                       WHERE m.is_deleted = 0";
+        if (count($conditions) > 0) {
+            $countQuery .= " AND " . implode(" AND ", $conditions);
+        }
+        $stmtCount = $this->conn->prepare($countQuery);
+        $stmtCount->execute($params);
+        $total_rows = $stmtCount->fetchColumn();
+
+        // B. 加上 Limit
+        $query .= " LIMIT " . (int)$offset . ", " . (int)$limit;
+
+        $stmt = $this->conn->prepare($query);
+        foreach ($params as $key => $val) {
+            $stmt->bindValue($key, $val);
+        }
+        $stmt->execute();
+
+        return [
+            "data" => $stmt->fetchAll(PDO::FETCH_ASSOC),
+            "total" => $total_rows,
+            "page" => $page,
+            "total_pages" => ceil($total_rows / $limit)
+        ];
+    }
+
+    // 2. 讀取單筆維修單 (用於編輯頁面回填)
+    public function readOne($id) {
+        $query = "SELECT 
+                    m.*,
+                    -- 資產資訊 (唯讀，給前端顯示這是修哪台用)
+                    b.asset_name,
+                    b.brand,
+                    b.model,
+                    CONCAT(b.pre_property_no, '-', i.sub_no) as full_property_no
+                  FROM " . $this->table . " m
+                  JOIN asset_items i ON m.item_id = i.id
+                  JOIN asset_batches b ON i.batch_id = b.id
+                  WHERE m.id = :id AND m.is_deleted = 0
+                  LIMIT 1";
+
+        $stmt = $this->conn->prepare($query);
+        $stmt->bindParam(":id", $id);
+        $stmt->execute();
+
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    }
 }

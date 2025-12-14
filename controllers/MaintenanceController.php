@@ -101,4 +101,41 @@ class MaintenanceController {
             echo json_encode(["message" => "刪除失敗"]);
         }
     }
+
+    // GET /api/maintenances
+    public function index () {
+        // 接收參數
+        $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
+        
+        $filters = [
+            'keyword' => $_GET['keyword'] ?? null, // 搜尋廠商或資產
+            'status' => $_GET['status'] ?? null    // 'active' 或 'finished'
+        ];
+
+        try {
+            $result = $this->maintenance->readAll($filters, $page, $limit);
+            echo json_encode($result);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "查詢失敗", "error" => $e->getMessage()]);
+        }
+    }
+
+    // GET /api/maintenances/{id}
+    public function show($id) {
+        try {
+            $data = $this->maintenance->readOne($id);
+
+            if ($data) {
+                echo json_encode($data);
+            } else {
+                http_response_code(404);
+                echo json_encode(["message" => "找不到此維修單"]);
+            }
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "查詢失敗", "error" => $e->getMessage()]);
+        }
+    }
 }
