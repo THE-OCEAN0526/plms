@@ -9,6 +9,7 @@ class User {
 	public $name;
 	public $password;
 	public $api_token;
+	public $theme;
 
 	public function __construct($db) {
 		$this->conn = $db;
@@ -64,7 +65,7 @@ class User {
 
 	public function login() {
 		// 撈取使用者資料
-		$query = "SELECT id, name, password FROM " . $this->table_name . " WHERE staff_code = :staff_code LIMIT 1";
+		$query = "SELECT id, name, password, theme FROM " . $this->table_name . " WHERE staff_code = :staff_code LIMIT 1";
 
 		$stmt = $this->conn->prepare($query);
 
@@ -82,6 +83,7 @@ class User {
 			if(password_verify($this->password, $row['password'])) {
 				$this->id = $row['id'];
 				$this->name = $row['name'];
+				$this->theme = $row['theme'];
 
 				// 生成新的 API Token
 				$this->api_token = bin2hex(random_bytes(32));
@@ -99,6 +101,17 @@ class User {
 			}
 		}	
 		return false;
+	}
+
+	public function updateTheme($newTheme) {
+		$query = "UPDATE " . $this->table_name . " SET theme = :theme WHERE id = :id";
+        $stmt = $this->conn->prepare($query);
+        
+        $newTheme = htmlspecialchars(strip_tags($newTheme));
+        $stmt->bindParam(':theme', $newTheme);
+        $stmt->bindParam(':id', $this->id);
+
+        return $stmt->execute();
 	}
 
 }

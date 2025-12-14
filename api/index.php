@@ -72,6 +72,8 @@ $router = new Router($db);
 // --- Auth Routes (登入/註冊) ---
 $router->add('POST', '/api/auth/login', 'AuthController@login'); 
 $router->add('POST', '/api/auth/register', 'AuthController@register');
+// 更新使用者主題偏好
+$router->add('PUT', '/api/user/theme', 'AuthController@updateTheme');
 
 // --- Dashboard Routes (主控台) ---
 $router->add('GET', '/api/dashboard/summary', 'DashboardController@summary');
@@ -85,6 +87,8 @@ $router->add('GET', '/api/assets/{id}', 'AssetController@show');
 $router->add('GET', '/api/assets/{id}/history', 'AssetController@history');
 // 新增資產
 $router->add('POST', '/api/assets', 'AssetController@store');
+// 載入地點
+$router->add('GET', '/api/locations', 'LocationController@index');
 
 
 // --- Transaction Routes (異動) ---

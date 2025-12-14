@@ -1,13 +1,16 @@
 <?php
 include_once __DIR__ . '/../classes/User.php';
+include_once __DIR__ . '/../classes/AuthMiddleware.php';
 
 class AuthController {
     private $db;
     private $user;
+    private $auth;
 
     public function __construct($db) {
         $this->db = $db;
         $this->user = new User($db);
+        $this->auth = new AuthMiddleware($db);
     }
 
     // POST /api/auth/login
@@ -26,6 +29,7 @@ class AuthController {
                         "id" => $this->user->id,
                         "staff_code" => $this->user->staff_code,
                         "name" => $this->user->name,
+                        "theme" => $this->user->theme,
                         "token" => $this->user->api_token 
                     ]
                 ]);
@@ -73,5 +77,30 @@ class AuthController {
             echo json_encode(["message" => "資料不完整"]);
         }
     }
+
+    public function updateTheme() {
+        // 1. 驗證 Token
+        $currentUser = $this->auth->authenticate(); 
+        
+        $data = json_decode(file_get_contents("php://input"));
+
+        // 2. 檢查參數
+        if (!empty($data->theme) && in_array($data->theme, ['light', 'dark'])) {
+            // 設定要更新的 User ID
+            $this->user->id = $currentUser['id'];
+            
+            // 3. 呼叫 Model 更新
+            if ($this->user->updateTheme($data->theme)) {
+                http_response_code(200);
+                echo json_encode(["message" => "樣式已儲存"]);
+            } else {
+                http_response_code(500);
+                echo json_encode(["message" => "更新失敗"]);
+            }
+        } else {
+            http_response_code(400);
+            echo json_encode(["message" => "參數錯誤 (theme 只能是 light 或 dark)"]);
+        }
+    } 
 }
 ?>

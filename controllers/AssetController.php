@@ -92,6 +92,7 @@ class AssetController {
             'status'   => $_GET['status'] ?? null,   // 例如: '閒置', '維修中'
             'category' => $_GET['category'] ?? null,  // 例如: '非消耗品'
             'owner_id' => $currentUser['id'], // 只看自己的資產
+            'filter_scope' => $_GET['scope'] ?? null // 例如: 'maintainable' 可維修篩選
         ];
 
         // 呼叫 Model 查詢

@@ -14,10 +14,12 @@ class AssetItem {
         // 1. 建構 SQL 查詢
         $query = "SELECT 
                     i.id, 
+                    i.batch_id,
                     i.sub_no, 
                     i.status, 
                     i.item_condition, 
                     i.updated_at,
+                    b.pre_property_no,
                     b.asset_name, 
                     b.brand, 
                     b.model, 
@@ -36,8 +38,34 @@ class AssetItem {
         $params = []; // 參數
 
         if (!empty($filters['keyword'])) {
-            $conditions[] = "(i.sub_no LIKE :keyword OR b.asset_name LIKE :keyword OR b.brand LIKE :keyword OR b.model LIKE :keyword)";
+            // 修正版搜尋邏輯
+            // 假設資料庫裡 pre_property_no 存的是 "3013208-63"
+            // 假設資料庫裡 sub_no 存的是 "10592"
+            
+            $conditions[] = "(
+                -- 1. 搜尋前綴 (例如輸入 '3013208-63')
+                b.pre_property_no LIKE :keyword OR 
+                
+                -- 2. 搜尋子序號 (例如輸入 '10592')
+                i.sub_no LIKE :keyword OR 
+                
+                -- 3. 搜尋完整編號 (將兩者用 '-' 連接起來，例如輸入 '3013208-63-10592')
+                CONCAT(b.pre_property_no, '-', i.sub_no) LIKE :keyword OR 
+                
+                -- 4. 搜尋其他欄位 (品名、廠牌、型號、批號)
+                b.asset_name LIKE :keyword OR 
+                b.brand LIKE :keyword OR 
+                b.model LIKE :keyword
+            )";
+            
             $params[':keyword'] = "%" . $filters['keyword'] . "%";
+        }
+
+        // 2. 【新增】狀態篩選 (這是為了您的維修選單加的！)
+        // 如果前端傳來 'status' => '可維修', 我們就自動排除那些不能修的
+        if (!empty($filters['filter_scope']) && $filters['filter_scope'] == 'maintainable') {
+            // 邏輯：排除 '維修中', '報廢', '遺失'
+            $conditions[] = "i.status NOT IN ('維修中', '報廢', '遺失')";
         }
 
         if (!empty($filters['status'])) {
