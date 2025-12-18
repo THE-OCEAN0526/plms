@@ -74,6 +74,8 @@ $router->add('POST', '/api/auth/login', 'AuthController@login');
 $router->add('POST', '/api/auth/register', 'AuthController@register');
 // 更新使用者主題偏好
 $router->add('PUT', '/api/user/theme', 'AuthController@updateTheme');
+// 取得使用者
+$router->add('GET', '/api/auth/index', 'AuthController@index');
 
 // --- Dashboard Routes (主控台) ---
 $router->add('GET', '/api/dashboard/summary', 'DashboardController@summary');

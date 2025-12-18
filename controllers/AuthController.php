@@ -13,6 +13,24 @@ class AuthController {
         $this->auth = new AuthMiddleware($db);
     }
 
+    // GET /api/users
+    public function index() {
+        // 驗證登入，確保只有系統使用者能查看清單
+        $this->auth->authenticate();
+
+        try {
+            $users = $this->user->getAll();
+            http_response_code(200);
+            echo json_encode([
+                "message" => "取得使用者資源成功",
+                "data" => $users
+            ]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            echo json_encode(["message" => "伺服器錯誤: " . $e->getMessage()]);
+        }
+    }
+
     // POST /api/auth/login
     public function login() {
         $data = json_decode(file_get_contents("php://input"));
