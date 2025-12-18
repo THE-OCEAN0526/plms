@@ -97,15 +97,14 @@ $router->add('POST', '/api/transactions', 'TransactionController@store');
 
 // --- Maintenance Routes (維修) ---
 // 送修
-$router->add('POST', '/api/maintenances', 'MaintenanceController@store');
+$router->add('POST', '/api/maintenances', 'MaintenanceController@create');
 // 結案/修改 
 $router->add('PUT', '/api/maintenances/{id}', 'MaintenanceController@update');
 // 刪除/取消 
-$router->add('DELETE', '/api/maintenances/{id}', 'MaintenanceController@destroy');
-// 1. 取得列表 (搜尋、分頁)
+$router->add('DELETE', '/api/maintenances/{id}', 'MaintenanceController@delete');
+// 取得列表 (搜尋、分頁)
 $router->add('GET', '/api/maintenances', 'MaintenanceController@index');
-
-// 2. 取得單筆資料 (點擊編輯時用)
+// 取得單筆資料 (點擊編輯時用)
 $router->add('GET', '/api/maintenances/{id}', 'MaintenanceController@show');
 
 // 執行分派

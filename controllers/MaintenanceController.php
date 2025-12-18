@@ -24,7 +24,8 @@ class MaintenanceController {
         $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
         
-        // 接收前端傳來的篩選條件
+        // 接收前端傳來的篩選條件 (目前keyword是備胎)
+        // 假設維修累積到5000筆以上，讓後端用keyword
         $filters = [
             'keyword' => $_GET['keyword'] ?? null, // 搜尋廠商、故障原因...
             'status' => $_GET['status'] ?? null    // 'active' (維修中) 或 'finished' (已結案)
@@ -41,8 +42,14 @@ class MaintenanceController {
     // =================================================================
     // 2. 讀取單筆資料 (GET /api/maintenances/{id})
     // =================================================================
-    public function show($id) {
-        // $this->auth->authenticate();
+    public function show($params) {
+        $this->auth->authenticate();
+        $id = $params['id'] ?? null;
+        
+        if (!$id) {
+            $this->sendError(400, "缺少 ID");
+            return;
+        }
 
         try {
             $data = $this->maintenance->readOne($id);
@@ -90,8 +97,15 @@ class MaintenanceController {
     // =================================================================
     // 4. 更新/結案維修單 (PUT /api/maintenances/{id})
     // =================================================================
-    public function update($id) {
+    public function update($params) {
         $this->auth->authenticate();
+
+        $id = $params['id'] ?? null; // 取出 ID
+        
+        if (!$id) {
+            $this->sendError(400, "缺少 ID");
+            return;
+        }
 
         $data = json_decode(file_get_contents("php://input"), true);
 
@@ -108,8 +122,14 @@ class MaintenanceController {
     // =================================================================
     // 5. 刪除維修單 (DELETE /api/maintenances/{id})
     // =================================================================
-    public function delete($id) {
+    public function delete($params) {
         $this->auth->authenticate();
+
+        $id = $params['id'] ?? null;
+        if (!$id) {
+            $this->sendError(400, "缺少 ID");
+            return;
+        }
 
         if ($this->maintenance->delete($id)) {
             echo json_encode(["message" => "維修單已刪除 (資產狀態已還原)"]);
