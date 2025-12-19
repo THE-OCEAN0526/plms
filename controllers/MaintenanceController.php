@@ -27,7 +27,7 @@ class MaintenanceController {
         // 接收前端傳來的篩選條件 (目前keyword是備胎)
         // 假設維修累積到5000筆以上，讓後端用keyword
         $filters = [
-            'keyword' => $_GET['keyword'] ?? null, // 搜尋廠商、故障原因...
+            'keyword' => $_GET['keyword'] ?? null, // 搜尋廠商...
             'status' => $_GET['status'] ?? null    // 'active' (維修中) 或 'finished' (已結案)
         ];
 
@@ -80,6 +80,11 @@ class MaintenanceController {
         // 簡單驗證
         if (empty($data['item_id']) || empty($data['action_type'])) {
             $this->sendError(400, "缺少必要欄位 (item_id, action_type)");
+            return;
+        }
+
+        if (empty($data['item_id']) || empty($data['action_type']) || empty($data['vendor'])) {
+            $this->sendError(400, "缺少必要欄位 (item_id, action_type, vendor 為必填)");
             return;
         }
 

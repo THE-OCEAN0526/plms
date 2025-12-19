@@ -48,7 +48,7 @@ class Transaction {
                     borrower      = :borrower,
                     location_id   = :location_id,
                     item_condition= :item_condition,
-                    action_date   = :action_date,
+                    action_date   = NOW(),
                     expected_return_date = :expected_return_date,
                     note          = :note";
 
@@ -69,7 +69,6 @@ class Transaction {
         $stmt->bindParam(":borrower", $this->borrower);
         $stmt->bindParam(":location_id", $this->location_id);
         $stmt->bindParam(":item_condition", $this->item_condition);
-        $stmt->bindParam(":action_date", $this->action_date);
         $stmt->bindParam(":expected_return_date", $this->expected_return_date);
         $stmt->bindParam(":note", $this->note);
 

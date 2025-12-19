@@ -114,15 +114,21 @@ class User {
         return $stmt->execute();
 	}
 
-	public function getAll() {
-    // 取得所有使用者，排除敏感資訊如密碼與 Token
-    $query = "SELECT id, staff_code, name FROM " . $this->table_name . " ORDER BY name ASC";
-    
-    $stmt = $this->conn->prepare($query);
-    $stmt->execute();
-    
-    return $stmt->fetchAll(PDO::FETCH_ASSOC);
-}
+	public function getAll($excludeId = null) {
+		// 預設排除傳入的 ID (當前使用者)
+		$query = "SELECT id, staff_code, name FROM " . $this->table_name;
+		if ($excludeId) {
+			$query .= " WHERE id != :excludeId";
+		}
+		$query .= " ORDER BY name ASC";
+		
+		$stmt = $this->conn->prepare($query);
+		if ($excludeId) {
+			$stmt->bindParam(':excludeId', $excludeId);
+		}
+		$stmt->execute();
+		return $stmt->fetchAll(PDO::FETCH_ASSOC);
+	}
 
 }
 

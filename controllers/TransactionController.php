@@ -13,13 +13,10 @@ class TransactionController {
         $this->auth = new AuthMiddleware($db);
     }
 
-    // POST /api/transactions
     public function store() {
         $this->auth->authenticate();
-
         $data = json_decode(file_get_contents("php://input"));
 
-        // 定義英文代碼與資料庫中文 ENUM 的對照表
         $actionMap = [
             'use'      => '使用',
             'loan'     => '借用',
@@ -30,69 +27,107 @@ class TransactionController {
             'correct'  => '校正'
         ];
 
-        // 1. 基本必填與合法性檢查
-        if (empty($data->item_ids) || !is_array($data->item_ids) || empty($data->action_type) || empty($data->action_date)) {
-            $this->badRequest("資料不完整 (需 item_ids 陣列, action_type, action_date)");
+        if (empty($data->item_ids) || !is_array($data->item_ids) || empty($data->action_type)) {
+            $this->badRequest("資料不完整 (需 item_ids 陣列, action_type)");
             return;
         }
 
         $englishAction = $data->action_type;
-
-        // 檢查 action_type 是否在定義的英文代碼中
         if (!array_key_exists($englishAction, $actionMap)) {
             $this->badRequest("無效的動作類型: " . $englishAction);
             return;
         }
 
-        $chineseAction = $actionMap[$englishAction]; // 取得資料庫使用的中文值
+        $chineseAction = $actionMap[$englishAction];
         $itemIds = $data->item_ids;
 
-        // 2. 狀態前置檢查 (Pre-check)
         try {
+            // 2. 狀態前置檢查 (嚴格規則檢查)
             $placeholders = implode(',', array_fill(0, count($itemIds), '?'));
-            $queryCheck = "SELECT id, sub_no, status, item_condition FROM asset_items WHERE id IN ($placeholders)";
+            $queryCheck = "SELECT id, sub_no, status, item_condition, owner_id FROM asset_items WHERE id IN ($placeholders)";
             $stmtCheck = $this->db->prepare($queryCheck);
             $stmtCheck->execute($itemIds);
             $itemsInDb = $stmtCheck->fetchAll(PDO::FETCH_ASSOC);
 
             if (count($itemsInDb) !== count($itemIds)) {
-                $this->badRequest("部分資產 ID 不存在，請重新確認");
+                $this->badRequest("部分資產 ID 不存在");
                 return;
             }
 
-            // 根據「英文動作」進行邏輯驗證，但比對的是「中文狀態」 (資料庫回傳中文)
             foreach ($itemsInDb as $item) {
+                $status = $item['status'];
+                $condition = $item['item_condition'];
+                $subNo = $item['sub_no'];
+
                 switch ($englishAction) {
-                    case 'loan': // 借用
-                        if ($item['status'] !== '閒置') {
-                            $this->badRequest("操作失敗：資產 [{$item['sub_no']}] 目前狀態為「{$item['status']}」，只有「閒置」資產才能借出。");
+                    case 'use':
+                    case 'loan':
+                        // 1. 使用/借用：只能在「閒置」時進行
+                        if ($status !== '閒置') {
+                            $this->badRequest("操作失敗：資產 [{$subNo}] 目前為「{$status}」，只有「閒置」資產才能開始使用或借出。");
+                            return;
+                        }
+                        // 借用人不可為保管人
+                        if ($englishAction === 'loan' && isset($data->borrower_id) && $data->borrower_id == $item['owner_id']) {
+                            $this->badRequest("操作失敗：資產 [{$subNo}] 的保管人不可作為借用人。");
                             return;
                         }
                         break;
-                    case 'scrap': // 報廢
-                        if ($item['item_condition'] !== '壞') {
-                            $this->badRequest("操作失敗：資產 [{$item['sub_no']}] 狀況為「{$item['item_condition']}」，必須為「壞」才能報廢。");
+
+                    case 'return':
+                        // 2. 歸還：只能在「借用中」進行
+                        if ($status !== '借用中') {
+                            $this->badRequest("操作失敗：資產 [{$subNo}] 目前為「{$status}」，只有「借用中」的資產才能執行歸還。");
                             return;
                         }
+                        break;
+
+                    case 'transfer':
+                        // 3. 移轉：必須是「閒置」，排除報廢、遺失、維修中
+                        if ($status !== '閒置') {
+                            $this->badRequest("操作失敗：資產 [{$subNo}] 目前為「{$status}」，只有「閒置」狀態的資產才能進行移轉。");
+                            return;
+                        }
+                        if ($data->new_owner_id == $item['owner_id']) {
+                            $this->badRequest("操作失敗：資產 [{$subNo}] 不可移轉給目前的保管人。");
+                            return;
+                        }
+                        break;
+
+                    case 'scrap':
+                        // 4. 報廢：必須是「壞」且尚未報廢
+                        if ($status === '報廢') {
+                            $this->badRequest("操作失敗：資產 [{$subNo}] 已經是報廢狀態。");
+                            return;
+                        }
+                        if ($condition !== '壞') {
+                            $this->badRequest("操作失敗：資產 [{$subNo}] 狀況為「{$condition}」，必須為「壞」才能報廢。");
+                            return;
+                        }
+                        break;
+
+                    case 'loss':
+                        // 5. 遺失：已經報廢或遺失的資產不可再登記遺失
+                        if ($status === '報廢' || $status === '遺失') {
+                            $this->badRequest("操作失敗：資產 [{$subNo}] 已經是「{$status}」狀態，不可再登記遺失。");
+                            return;
+                        }
+                        break;
+
+                    case 'correct':
+                        // 校正：無狀態限制，用於將資產復原至可用狀態
                         break;
                 }
             }
-        } catch (Exception $e) {
-            $this->sendError(500, "前置檢查發生錯誤: " . $e->getMessage());
-            return;
-        }
 
-        // 3. 動作特定欄位檢查 (改用英文 Key 判斷)
-        if (!$this->validateActionFields($englishAction, $data)) return;
+            // 3. 欄位驗證
+            if (!$this->validateActionFields($englishAction, $data)) return;
 
-        // 4. 資料庫交易與寫入
-        try {
+            // 4. 資料庫交易
             $this->db->beginTransaction();
-
             foreach ($itemIds as $id) {
                 $this->transaction->item_id = $id;
-                $this->transaction->action_type = $chineseAction; // ★ 寫入資料庫必須用中文 ENUM 值
-                $this->transaction->action_date = $data->action_date;
+                $this->transaction->action_type = $chineseAction;
                 $this->transaction->location_id = $data->location_id ?? null;
                 $this->transaction->item_condition = $data->item_condition ?? '好';
                 $this->transaction->note = $data->note ?? '';
@@ -101,49 +136,52 @@ class TransactionController {
                 $this->transaction->expected_return_date = $data->expected_return_date ?? null;
                 $this->transaction->new_owner_id = $data->new_owner_id ?? null;
 
-                if (!$this->transaction->create()) {
-                    throw new Exception("資產 ID $id 寫入失敗");
-                }
+                if (!$this->transaction->create()) throw new Exception("ID $id 寫入失敗");
             }
-
             $this->db->commit();
-            http_response_code(201);
-            echo json_encode([
-                "message" => "批次異動紀錄新增成功", 
-                "count" => count($itemIds),
-                "action" => $englishAction
-            ]);
+            echo json_encode(["message" => "批次異動成功", "count" => count($itemIds)]);
 
         } catch (Exception $e) {
-            $this->db->rollBack();
-            $this->sendError(500, "批次寫入失敗，已全數復原。錯誤: " . $e->getMessage());
+            if ($this->db->inTransaction()) $this->db->rollBack();
+            $this->sendError(500, "系統錯誤: " . $e->getMessage());
         }
     }
 
-    // 驗證欄位邏輯改用英文代碼
     private function validateActionFields($action, $data) {
-        switch ($action) {
-            case 'use': // 使用
-                if (empty($data->location_id)) { $this->badRequest("使用情境必須填寫：位置 (location_id)"); return false; }
-                break;
-            case 'loan': // 借用
-                if (empty($data->borrower_id) && empty($data->borrower)) { $this->badRequest("借用必須填寫：借用人"); return false; }
-                if (empty($data->expected_return_date)) { $this->badRequest("借用必須填寫：預計歸還日"); return false; }
-                break;
-            case 'return': // 歸還
-                if (empty($data->location_id) || empty($data->item_condition)) { $this->badRequest("歸還必須填寫：位置與狀況"); return false; }
-                break;
-            case 'transfer': // 移轉
-                if (empty($data->new_owner_id)) { $this->badRequest("移轉必須填寫：新擁有者"); return false; }
-                break;
-            case 'scrap': // 報廢
-            case 'loss':  // 遺失
-            case 'correct': // 校正
-                if (empty($data->note)) { $this->badRequest("此情境必須填寫備註說明原因"); return false; }
-                break;
-        }
-        return true;
+    switch ($action) {
+        case 'use':
+            if (empty($data->location_id)) { $this->badRequest("使用必須填寫位置"); return false; }
+            break;
+        case 'loan':
+            if (empty($data->borrower_id) && empty($data->borrower)) { $this->badRequest("借用必須填寫借用人"); return false; }
+            if (empty($data->expected_return_date)) { $this->badRequest("借用必須填寫預計歸還日"); return false; }
+            break;
+        case 'return':
+            if (empty($data->location_id) || empty($data->item_condition)) { $this->badRequest("歸還必須填寫位置與狀況"); return false; }
+            break;
+        case 'transfer':
+            if (empty($data->new_owner_id)) { $this->badRequest("移轉必須填寫新擁有者"); return false; }
+            break;
+            
+        // ★ 修改此處：將 correct 獨立出來
+        case 'correct':
+            if (empty($data->location_id)) { 
+                $this->badRequest("執行「校正」時，必須指定資產目前找回後存放的位置。"); 
+                return false; 
+            }
+            if (empty($data->note)) { 
+                $this->badRequest("執行「校正」必須在備註說明原因。"); 
+                return false; 
+            }
+            break;
+
+        case 'scrap':
+        case 'loss':
+            if (empty($data->note)) { $this->badRequest("此動作必須填寫備註說明原因"); return false; }
+            break;
     }
+    return true;
+}
 
     private function badRequest($msg) {
         http_response_code(400);
@@ -155,4 +193,3 @@ class TransactionController {
         echo json_encode(["message" => $message]);
     }
 }
-?>

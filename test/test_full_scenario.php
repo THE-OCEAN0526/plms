@@ -65,7 +65,7 @@ try {
     // =================================================================
     echo "<h3>2. 系統登入 (vbird)</h3>";
     echo "<div class='box'>";
-    $loginRes = sendRequest('POST', "$baseUrl/auth/login", ["staff_code" => "T123E001", "password" => "mystdgo"]); // 修正帳號
+    $loginRes = sendRequest('POST', "$baseUrl/tokens", ["staff_code" => "T123E001", "password" => "mystdgo"]); // 修正帳號
     $token = json_decode($loginRes['body'], true)['data']['token'] ?? '';
 
     if (!$token) die("<span class='fail'>❌ 登入失敗: {$loginRes['body']}</span>");
@@ -258,7 +258,7 @@ try {
 
     // 6-1. 登入 吳曉明
     echo "<b>登入 [吳曉明] (G140A002)...</b><br>";
-    $loginRes2 = sendRequest('POST', "$baseUrl/auth/login", ["staff_code" => "G140A002", "password" => "mystdgo"]);
+    $loginRes2 = sendRequest('POST', "$baseUrl/tokens", ["staff_code" => "G140A002", "password" => "mystdgo"]);
     $token2 = json_decode($loginRes2['body'], true)['data']['token'] ?? '';
 
     if ($token2) {

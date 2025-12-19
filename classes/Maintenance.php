@@ -32,7 +32,7 @@ class Maintenance {
                     m.send_date,
                     m.action_type,
                     m.vendor,
-                    m.issue_description,  -- ★ 新增：故障描述
+                    m.issue_description, 
                     m.maintain_result,
                     m.result_status,
                     m.finish_date,
@@ -56,7 +56,6 @@ class Maintenance {
         if (!empty($filters['keyword'])) {
             $conditions[] = "(
                 m.vendor LIKE :keyword OR 
-                m.issue_description LIKE :keyword OR -- ★ 讓使用者也能搜故障原因
                 m.maintain_result LIKE :keyword OR
                 b.asset_name LIKE :keyword OR
                 CONCAT(b.pre_property_no, '-', i.sub_no) LIKE :keyword

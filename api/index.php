@@ -70,15 +70,15 @@ $router = new Router($db);
 
 
 // --- Auth Routes (登入/註冊) ---
-$router->add('POST', '/api/auth/login', 'AuthController@login'); 
-$router->add('POST', '/api/auth/register', 'AuthController@register');
+$router->add('POST', '/api/tokens', 'AuthController@login');
+$router->add('POST', '/api/users', 'AuthController@register');
 // 更新使用者主題偏好
-$router->add('PUT', '/api/user/theme', 'AuthController@updateTheme');
+$router->add('PUT', '/api/users/theme', 'AuthController@updateTheme');
 // 取得使用者
-$router->add('GET', '/api/auth/index', 'AuthController@index');
+$router->add('GET', '/api/users', 'AuthController@index');
 
 // --- Dashboard Routes (主控台) ---
-$router->add('GET', '/api/dashboard/summary', 'DashboardController@summary');
+$router->add('GET', '/api/dashboard', 'DashboardController@summary');
 
 // --- Asset Routes (顯示資產) ---
 // 取得列表
