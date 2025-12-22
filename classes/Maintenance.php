@@ -6,6 +6,7 @@ class Maintenance {
     // 雖然 PHP 屬性沒宣告也能跑，但定義出來比較嚴謹
     public $id;
     public $item_id;
+    public $user_id;
     public $send_date;
     public $action_type;
     public $vendor;
@@ -51,6 +52,12 @@ class Maintenance {
 
         $conditions = [];
         $params = [];
+
+        // 加入 user_id 過濾
+        if (!empty($filters['user_id'])) {
+            $conditions[] = "m.user_id = :user_id";
+            $params[':user_id'] = $filters['user_id'];
+        }
 
         // 搜尋邏輯 (同時搜 廠商、故障描述、處理結果、編號、品名)
         if (!empty($filters['keyword'])) {
@@ -146,13 +153,14 @@ class Maintenance {
         if (!$currentItem) return false;
 
         $query = "INSERT INTO " . $this->table . " 
-                  (item_id, prev_status, prev_condition, send_date, action_type, vendor, issue_description) 
+                  (item_id, user_id, prev_status, prev_condition, send_date, action_type, vendor, issue_description) 
                   VALUES 
-                  (:item_id, :prev_status, :prev_condition, :send_date, :action_type, :vendor, :issue_description)";
+                  (:item_id, :user_id, :prev_status, :prev_condition, :send_date, :action_type, :vendor, :issue_description)";
 
         $stmt = $this->conn->prepare($query);
 
         $stmt->bindValue(':item_id', $data['item_id']);
+        $stmt->bindValue(':user_id', $data['user_id']);
         $stmt->bindValue(':prev_status', $currentItem['status']);
         $stmt->bindValue(':prev_condition', $currentItem['item_condition']);
         $stmt->bindValue(':send_date', $data['send_date'] ?? date('Y-m-d'));

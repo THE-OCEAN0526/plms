@@ -162,6 +162,7 @@ class AssetController {
                 "id" => $asset['id'],
                 "sub_no" => $asset['sub_no'],
                 "name" => $asset['asset_name'],
+                "category" => $asset['category'],
                 "status" => $asset['status']
             ],
             "timeline" => $history

@@ -19,7 +19,7 @@ class MaintenanceController {
     // =================================================================
     public function index() {
         // 驗證登入 (視需求開啟)
-        // $this->auth->authenticate();
+        $currentUser = $this->auth->authenticate();
 
         $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
@@ -27,6 +27,7 @@ class MaintenanceController {
         // 接收前端傳來的篩選條件 (目前keyword是備胎)
         // 假設維修累積到5000筆以上，讓後端用keyword
         $filters = [
+            'user_id' => $currentUser['id'], // 只能看自己的
             'keyword' => $_GET['keyword'] ?? null, // 搜尋廠商...
             'status' => $_GET['status'] ?? null    // 'active' (維修中) 或 'finished' (已結案)
         ];
@@ -68,7 +69,7 @@ class MaintenanceController {
     // 3. 新增維修單 (POST /api/maintenances)
     // =================================================================
     public function create() {
-        $this->auth->authenticate(); // 新增通常需要登入
+        $currentUser = $this->auth->authenticate(); // 驗證登入並取得當前使用者資訊
 
         $data = json_decode(file_get_contents("php://input"), true);
 
@@ -77,18 +78,15 @@ class MaintenanceController {
             return;
         }
 
-        // 簡單驗證
-        if (empty($data['item_id']) || empty($data['action_type'])) {
-            $this->sendError(400, "缺少必要欄位 (item_id, action_type)");
-            return;
-        }
-
+        // 基本欄位驗證
         if (empty($data['item_id']) || empty($data['action_type']) || empty($data['vendor'])) {
             $this->sendError(400, "缺少必要欄位 (item_id, action_type, vendor 為必填)");
             return;
         }
 
-        // ★ 重點：直接把陣列傳給 Model
+        // 將 Token 解析出來的使用者 ID 注入資料中
+        $data['user_id'] = $currentUser['id'];
+        // 直接把陣列傳給 Model
         $newId = $this->maintenance->create($data);
 
         if ($newId) {

@@ -62,7 +62,7 @@ class Transaction {
 
         // 綁定參數
         $stmt->bindParam(":item_id", $this->item_id);
-        $stmt->bindParam(":action_type", $this->action_type);
+        $stmt->bindParam(":action_type", $this->action_type);       
         $stmt->bindParam(":prev_owner_id", $prev_owner_id);
         $stmt->bindParam(":new_owner_id", $this->new_owner_id);
         $stmt->bindParam(":borrower_id", $this->borrower_id);

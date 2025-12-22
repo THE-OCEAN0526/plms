@@ -105,5 +105,47 @@ class Dashboard {
 
         return $todos;
     }
+
+    // 取得金額統計
+    public function getAmounts() {
+        $amounts = [
+            "total_asset" => 0,     // 總資產金額
+            "total_repair" => 0,    // 維修總金額
+            "total_scrapped" => 0   // 報廢總金額
+        ];
+
+        // 1. 計算資產總金額 (目前名下所有資產的單價加總)
+        // 邏輯：從 asset_items 找出我的資產，JOIN asset_batches 取得單價
+        $qAsset = "SELECT SUM(b.unit_price) as total 
+                   FROM asset_items i
+                   JOIN asset_batches b ON i.batch_id = b.id
+                   WHERE i.owner_id = :uid";
+        
+        // 2. 計算維修總金額 (名下資產所產生的所有維修費，不論資產現在歸誰。)
+        $qRepair = "SELECT SUM(cost) as total 
+                    FROM asset_maintenance
+                    WHERE user_id = :uid AND is_deleted = 0";
+
+        // 3. 計算報廢總金額 (目前狀態為 '報廢' 的資產原始單價加總)
+        $qScrapped = "SELECT SUM(b.unit_price) as total 
+                      FROM asset_items i
+                      JOIN asset_batches b ON i.batch_id = b.id
+                      WHERE i.owner_id = :uid AND i.status = '報廢'";
+
+        // 執行查詢並賦值 (使用 floatval 處理 NULL 的情況)
+        $stmt = $this->conn->prepare($qAsset);
+        $stmt->execute([':uid' => $this->user_id]);
+        $amounts["total_asset"] = floatval($stmt->fetchColumn());
+
+        $stmt = $this->conn->prepare($qRepair);
+        $stmt->execute([':uid' => $this->user_id]);
+        $amounts["total_repair"] = floatval($stmt->fetchColumn());
+
+        $stmt = $this->conn->prepare($qScrapped);
+        $stmt->execute([':uid' => $this->user_id]);
+        $amounts["total_scrapped"] = floatval($stmt->fetchColumn());
+
+        return $amounts;
+    }
 }
 ?>

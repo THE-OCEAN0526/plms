@@ -150,17 +150,33 @@ class AssetItem {
     public function getHistory($id) {
         $query = "
             (
-                -- 1. 異動紀錄
+                -- 1. 異動紀錄 (領用、借用、歸還、移轉、報廢)
                 SELECT 
                     'Transaction' as source_type,
                     t.action_date as event_date,
                     t.action_type,
-                    u.name as operator,
-                    IFNULL(t.note, '') as description,
+                    CASE 
+                        WHEN t.action_type = '借用' THEN IFNULL(u_b.name, t.borrower)
+                        WHEN t.action_type = '移轉' THEN u_n.name
+                        ELSE NULL 
+                    END as target_name,
+                    
+                    -- 根據不同的 action_type 組合不同的 description
+                    CASE 
+                        WHEN t.action_type = '借用' THEN 
+                            CONCAT('備註: ', IFNULL(t.note, '無'), '\n預計歸還: ', IFNULL(t.expected_return_date, '未定'))
+                        WHEN t.action_type = '歸還' THEN 
+                            CONCAT('備註: ', IFNULL(t.note, '無'), '\n物品狀況: ', IFNULL(t.item_condition, '正常'))
+                        WHEN t.action_type IN ('領用', '使用', '移轉', '報廢') THEN 
+                            CONCAT('備註: ', IFNULL(t.note, '無'))
+                        ELSE IFNULL(t.note, '')
+                    END as description,
+                    
                     l.name as location,
                     t.id as sort_id
                 FROM asset_transactions t
-                LEFT JOIN users u ON t.borrower_id = u.id
+                LEFT JOIN users u_b ON t.borrower_id = u_b.id
+                LEFT JOIN users u_n ON t.new_owner_id = u_n.id
                 LEFT JOIN locations l ON t.location_id = l.id
                 WHERE t.item_id = :id1
             )
@@ -168,11 +184,14 @@ class AssetItem {
             (
                 -- 2. 維修紀錄 (送修)
                 SELECT 
-                    'Maintenance' as source_type,
+                    'Maintenance_Start' as source_type,
                     m.send_date as event_date,
                     CONCAT(m.action_type, ' (送修)') as action_type,
-                    m.vendor as operator,
-                    '送廠維修' as description,
+                    m.vendor as target_name,
+                    
+                    -- 送修只顯示故障描述
+                    CONCAT('故障描述: ', IFNULL(m.issue_description, '未提供')) as description,
+                    
                     NULL as location,
                     m.id as sort_id
                 FROM asset_maintenance m
@@ -185,8 +204,16 @@ class AssetItem {
                     'Maintenance_End' as source_type,
                     m.finish_date as event_date,
                     CONCAT(m.action_type, ' (結案)') as action_type,
-                    m.vendor as operator,
-                    CONCAT(m.result_status, ': ', IFNULL(m.maintain_result, '')) as description,
+                    m.vendor as target_name,
+                    
+                    -- 結案顯示結果、描述、費用與日期
+                    CONCAT(
+                        '維修結果: ', IFNULL(m.result_status, '無'), 
+                        '\n詳細說明: ', IFNULL(m.maintain_result, '無'),
+                        '\n維修費用: $', IFNULL(m.cost, 0),
+                        '\n完修日期: ', IFNULL(m.finish_date, '-')
+                    ) as description,
+                    
                     NULL as location,
                     m.id as sort_id
                 FROM asset_maintenance m
@@ -194,21 +221,31 @@ class AssetItem {
             )
             UNION ALL
             (
-                -- 4. 【新增】入庫紀錄 (從 Batch 撈)
+                -- 4. 原始入庫紀錄
                 SELECT 
                     'Ingest' as source_type,
-                    b.add_date as event_date, /* 或 purchase_date */
+                    b.add_date as event_date,
                     '入庫' as action_type,
-                    '系統' as operator,
-                    CONCAT('批號: ', b.batch_no) as description,
+                    NULL as target_name,
+                    
+                    -- 入庫顯示完整的資產詳細規格與資訊
+                    CONCAT(
+                        '廠牌: ', IFNULL(b.brand, '-'), 
+                        '\n型號: ', IFNULL(b.model, '-'),
+                        '\n規格: ', IFNULL(b.spec, '-'),
+                        '\n單價: $', IFNULL(b.unit_price, 0),
+                        '\n採購日期: ', IFNULL(b.purchase_date, '-'),
+                        '\n耐用年限: ', IFNULL(b.life_years, 0), ' 年',
+                        '\n經費來源: ', IFNULL(b.fund_source, '-')
+                    ) as description,
+                    
                     l.name as location,
-                    0 as sort_id /* 讓它排在同一天的最前面 */
+                    0 as sort_id
                 FROM asset_items i
                 JOIN asset_batches b ON i.batch_id = b.id
                 LEFT JOIN locations l ON b.location = l.id
                 WHERE i.id = :id4
             )
-            -- 這裡改成 ASC (從古至今) 比較像看故事
             ORDER BY event_date ASC, sort_id ASC
         ";
 

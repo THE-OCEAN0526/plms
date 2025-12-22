@@ -22,6 +22,8 @@ class DashboardController {
             $response = [
                 // 數據卡片區
                 "stats" => $dashboard->getStats(),
+                // 金額統計區
+                "amounts" => $dashboard->getAmounts(),
                 // 近期動態區
                 "recent_activities" => $dashboard->getRecentActivity(),
                 // 待辦與警示區
