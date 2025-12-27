@@ -112,9 +112,12 @@ class MaintenanceController {
 
         $data = json_decode(file_get_contents("php://input"), true);
 
-        // ★ 重點：Model 的 update 現在很聰明，
+        if (isset($data['start_date'])) {
+            $data['send_date'] = $data['start_date'];
+        }
+
         // 傳 issue_description 就改描述，傳 finish_date 就結案，
-        // 所以 Controller 只要負責傳遞就好。
+        // Controller 只要負責傳遞
         if ($this->maintenance->update($id, $data)) {
             echo json_encode(["message" => "更新成功"]);
         } else {

@@ -71,11 +71,8 @@ class Dashboard {
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
-    // 3. 取得待辦事項
     // 3. 取得待辦事項與警示 (Todos)
-    // 這裡幫您檢查：
     // A. 維修超過 30 天還沒回來的
-    // B. (可選) 借出逾期的 (如果有做借用功能的話)
     public function getTodos() {
         $todos = [];
 
@@ -100,6 +97,30 @@ class Dashboard {
                 "type" => "warning",
                 "title" => "維修逾期警告",
                 "message" => "資產 [{$row['asset_name']}] 送修已超過 {$row['days']} 天尚未結案。"
+            ];
+        }
+
+        // B. 借出逾期
+        $queryLoan = "SELECT b.asset_name, t.expected_return_date, IFNULL(u.name, t.borrower) as borrower_name, DATEDIFF(NOW(), t.expected_return_date) as overdue_days
+                      FROM asset_transactions t
+                      JOIN asset_items i ON t.item_id = i.id
+                      JOIN asset_batches b ON i.batch_id = b.id
+                      LEFT JOIN users u ON t.borrower_id = u.id
+                      WHERE i.owner_id = :uid 
+                        AND i.status = '借用中' AND t.action_type = '借用'
+                        AND t.expected_return_date < NOW()
+                        AND t.id = (SELECT MAX(id) FROM asset_transactions WHERE item_id = i.id AND action_type = '借用')";
+
+        $stmtLoan = $this->conn->prepare($queryLoan);
+        $stmtLoan->bindParam(":uid", $this->user_id);
+        $stmtLoan->execute();
+
+        while ($row = $stmtLoan->fetch(PDO::FETCH_ASSOC)) {
+            $borrower = $row['borrower_name'] ?: "未知借用人";
+            $todos[] = [
+                "type" => "error", // 逾期通常比維修逾期更緊急
+                "title" => "借用逾期警告",
+                "message" => "資產 [{$row['asset_name']}] 被 [{$borrower}] 借用，已逾期 {$row['overdue_days']} 天。"
             ];
         }
 

@@ -137,6 +137,44 @@ try {
     echo "<div class='step'>ℹ️ <b>資產狀態已由系統自動更新為「報廢」，流程終止。</b></div>";
     echo "</div>";
 
+
+    // 額外測試：手動製造逾期資料 (為了測試小鈴鐺)
+    echo "<br><b>[G. 逾期警示測試] 手動製造逾期紀錄...</b><br>";
+
+    // 1. 製造維修逾期 (把一個維修中的資產 send_date 改成 40 天前)
+    $stmtM = $db->query("SELECT m.id FROM asset_maintenance m 
+                        JOIN asset_items i ON m.item_id = i.id 
+                        WHERE i.status = '維修中' LIMIT 1");
+    $maint = $stmtM->fetch(PDO::FETCH_ASSOC);
+    if ($maint) {
+        $db->exec("UPDATE asset_maintenance SET send_date = DATE_SUB(NOW(), INTERVAL 40 DAY) WHERE id = {$maint['id']}");
+        echo "&nbsp;&nbsp;維修 ID {$maint['id']}: 設為 40 天前 <span class='pass'>OK</span><br>";
+    }
+
+    // 2. 製造借用逾期 (把一個借用中的資產 expected_return_date 改成 3 天前)
+    $stmtL = $db->query("SELECT t.id FROM asset_transactions t 
+                        JOIN asset_items i ON t.item_id = i.id 
+                        WHERE i.status = '借用中' AND t.action_type = '借用' LIMIT 1");
+    $trans = $stmtL->fetch(PDO::FETCH_ASSOC);
+    if ($trans) {
+        $db->exec("UPDATE asset_transactions SET expected_return_date = DATE_SUB(NOW(), INTERVAL 3 DAY) WHERE id = {$trans['id']}");
+        echo "&nbsp;&nbsp;借用 ID {$trans['id']}: 設為 3 天前逾期 <span class='pass'>OK</span><br>";
+    }
+
+    // --- 呼叫 Dashboard API 驗證小鈴鐺內容 ---
+    echo "<br><b>[H. 驗證 Dashboard 小鈴鐺 API]</b><br>";
+    $dashRes = sendRequest('GET', "$baseUrl/dashboard/summary", [], $token);
+    $dashData = json_decode($dashRes['body'], true);
+
+    if ($dashRes['http_code'] == 200 && !empty($dashData['todos'])) {
+        echo "<span class='pass'>✅ 驗證成功！小鈴鐺收到 " . count($dashData['todos']) . " 筆警示。</span><br>";
+        foreach ($dashData['todos'] as $todo) {
+            echo "&nbsp;&nbsp;- [{$todo['title']}] {$todo['message']} ({$todo['type']})<br>";
+        }
+    } else {
+        echo "<span class='fail'>❌ 驗證失敗：小鈴鐺沒有收到預期的警示內容。</span>";
+    }
+
     echo "<h2>🎉 全系統 API 模擬測試完成！所有生命軌跡已成功寫入。</h2>";
 
 } catch (Exception $e) {
