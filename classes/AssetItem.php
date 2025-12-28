@@ -210,8 +210,7 @@ class AssetItem {
                     CONCAT(
                         '維修結果: ', IFNULL(m.result_status, '無'), 
                         '\n詳細說明: ', IFNULL(m.maintain_result, '無'),
-                        '\n維修費用: $', IFNULL(m.cost, 0),
-                        '\n完修日期: ', IFNULL(m.finish_date, '-')
+                        '\n維修費用: $', IFNULL(m.cost, 0)
                     ) as description,
                     
                     NULL as location,
@@ -234,8 +233,8 @@ class AssetItem {
                         '\n型號: ', IFNULL(b.model, '-'),
                         '\n規格: ', IFNULL(b.spec, '-'),
                         '\n單價: $', IFNULL(b.unit_price, 0),
-                        '\n採購日期: ', IFNULL(b.purchase_date, '-'),
-                        '\n耐用年限: ', IFNULL(b.life_years, 0), ' 年',
+                        '\n驗收日期: ', IFNULL(b.purchase_date, '-'),
+                        '\n使用年限: ', IFNULL(b.life_years, 0), ' 年',
                         '\n經費來源: ', IFNULL(b.fund_source, '-')
                     ) as description,
                     

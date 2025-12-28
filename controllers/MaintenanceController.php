@@ -1,5 +1,4 @@
 <?php
-// controllers/MaintenanceController.php
 include_once __DIR__ . '/../classes/Maintenance.php';
 include_once __DIR__ . '/../classes/AuthMiddleware.php';
 
@@ -14,9 +13,7 @@ class MaintenanceController {
         $this->auth = new AuthMiddleware($db);
     }
 
-    // =================================================================
-    // 1. 取得維修列表 (GET /api/maintenances)
-    // =================================================================
+    // 取得維修列表 (GET /api/maintenances)
     public function index() {
         // 驗證登入 (視需求開啟)
         $currentUser = $this->auth->authenticate();
@@ -40,9 +37,7 @@ class MaintenanceController {
         }
     }
 
-    // =================================================================
-    // 2. 讀取單筆資料 (GET /api/maintenances/{id})
-    // =================================================================
+    // 讀取單筆資料 (GET /api/maintenances/{id})
     public function show($params) {
         $this->auth->authenticate();
         $id = $params['id'] ?? null;
@@ -65,9 +60,7 @@ class MaintenanceController {
         }
     }
 
-    // =================================================================
-    // 3. 新增維修單 (POST /api/maintenances)
-    // =================================================================
+    // 新增維修單 (POST /api/maintenances)
     public function create() {
         $currentUser = $this->auth->authenticate(); // 驗證登入並取得當前使用者資訊
 
@@ -97,9 +90,7 @@ class MaintenanceController {
         }
     }
 
-    // =================================================================
-    // 4. 更新/結案維修單 (PUT /api/maintenances/{id})
-    // =================================================================
+    // 更新/結案維修單 (PUT /api/maintenances/{id})
     public function update($params) {
         $this->auth->authenticate();
 
@@ -125,9 +116,7 @@ class MaintenanceController {
         }
     }
 
-    // =================================================================
-    // 5. 刪除維修單 (DELETE /api/maintenances/{id})
-    // =================================================================
+    // 刪除維修單 (DELETE /api/maintenances/{id})
     public function delete($params) {
         $this->auth->authenticate();
 
@@ -144,7 +133,7 @@ class MaintenanceController {
         }
     }
 
-    // --- 輔助函式：回傳錯誤 ---
+    //  回傳錯誤 
     private function sendError($code, $message) {
         http_response_code($code);
         echo json_encode(["message" => $message, "error" => $code]);

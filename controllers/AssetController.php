@@ -25,9 +25,9 @@ class AssetController {
         $data = json_decode(file_get_contents("php://input"));
 
         // 必填檢查
-        if(empty($data->batch_no) || empty($data->asset_name) || !isset($data->suf_start_no) || !isset($data->suf_end_no)) {
+        if(empty($data->pre_property_no) || empty($data->add_date) || empty($data->asset_name) || !isset($data->suf_start_no) || !isset($data->suf_end_no)) {
             http_response_code(400);
-            echo json_encode(["message" => "資料不完整：批號、品名、起始號、結束號為必填"]);
+            echo json_encode(["message" => "資料不完整：日期、品名、起始號、結束號為必填"]);
             return;
         }
 
@@ -38,6 +38,7 @@ class AssetController {
         }
 
         // 資料對應，將資料塞入 Model 
+        $this->assetBatch->add_date = $data->add_date;
         $this->assetBatch->batch_no = $data->batch_no;
         $this->assetBatch->fund_source = $data->fund_source ?? null;
         $this->assetBatch->purchase_date = $data->purchase_date ?? null;
@@ -66,7 +67,6 @@ class AssetController {
                     "message" => "資產入庫成功",
                     "data" => [
                         "batch_id" => $this->assetBatch->id,
-                        "batch_no" => $this->assetBatch->batch_no,
                         "qty" => ($this->assetBatch->suf_end_no - $this->assetBatch->suf_start_no + 1)
                     ]
                 ]);
@@ -74,7 +74,7 @@ class AssetController {
         } catch (Exception $e) {
             // 捕捉 Model 拋出的錯誤 (包含 Trigger 的錯誤訊息)
             http_response_code(400);
-            echo json_encode(["message" => "入庫失敗：" . $e->getMessage()]);
+            echo json_encode(["message" => $e->getMessage()]);
         }
     }
 

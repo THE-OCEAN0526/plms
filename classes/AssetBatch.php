@@ -6,7 +6,8 @@ class AssetBatch {
 
     // 屬性
     public $id;
-    public $batch_no;       
+    public $batch_no;
+    public $add_date;
     public $pre_property_no;
     public $suf_start_no;   
     public $suf_end_no;     
@@ -63,9 +64,17 @@ class AssetBatch {
                         life_years      = :life_years,
                         accounting_items= :accounting_items,
                         fund_source     = :fund_source,
-                        add_date        = CURDATE()";
+                        add_date        = :add_date";
 
             $stmt = $this->conn->prepare($query);
+
+            // 如果前端有傳日期，我們補上「目前」的時分秒，確保排序精確
+            // 如果沒傳，補上 00:00:00 確保它是當天第一筆
+            if (empty($this->add_date)) {
+                $this->add_date = date("Y-m-d H:i:s");
+            } else if (strlen($this->add_date) == 10) {
+                $this->add_date .= " 00:00:00";
+            }
 
             // 綁定參數
             $stmt->bindParam(":batch_no", $this->batch_no);
@@ -84,6 +93,7 @@ class AssetBatch {
             $stmt->bindParam(":life_years", $this->life_years);
             $stmt->bindParam(":accounting_items", $this->accounting_items);
             $stmt->bindParam(":fund_source", $this->fund_source);
+            $stmt->bindParam(":add_date", $this->add_date);
 
             $stmt->execute();
 
@@ -126,7 +136,7 @@ class AssetBatch {
             if($e instanceof PDOException) {
                 // Trigger 拋出的 SQLSTATE '45000'
                 if ($e->getCode() == '45000') {
-                    throw new Exception($e->getMessage()); // 直接顯示 Trigger 的錯誤訊息
+                    throw new Exception($e->errorInfo[2]); // 直接顯示 Trigger 的錯誤訊息
                 }
                 $errInfo = $e->errorInfo;
                 if (isset($errInfo[1]) && $errInfo[1] == 1062) {

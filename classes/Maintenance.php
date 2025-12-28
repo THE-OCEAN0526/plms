@@ -3,14 +3,13 @@ class Maintenance {
     private $conn;
     private $table = "asset_maintenance";
 
-    // 雖然 PHP 屬性沒宣告也能跑，但定義出來比較嚴謹
     public $id;
     public $item_id;
     public $user_id;
     public $send_date;
     public $action_type;
     public $vendor;
-    public $issue_description; // ★ 新增
+    public $issue_description;
     public $maintain_result;
     public $result_status;
     public $finish_date;
@@ -21,9 +20,8 @@ class Maintenance {
         $this->conn = $db;
     }
 
-    // =================================================================
-    // 1. 取得維修列表 (已修正：補上 pre_property_no, sub_no, issue_description)
-    // =================================================================
+
+    // 取得維修列表
     public function readAll($filters = [], $page = 1, $limit = 10) {
         $offset = ($page - 1) * $limit;
 
@@ -41,8 +39,8 @@ class Maintenance {
                     m.is_deleted,
                     -- 資產資訊 (分開欄位，方便前端 Autocomplete 格式化)
                     b.asset_name,
-                    b.pre_property_no,    -- ★ 新增：獨立前綴
-                    i.sub_no,             -- ★ 新增：獨立後綴
+                    b.pre_property_no,   
+                    i.sub_no,             
                     CONCAT(b.pre_property_no, '-', i.sub_no) as full_property_no,
                     i.status as current_asset_status
                   FROM " . $this->table . " m
@@ -111,17 +109,15 @@ class Maintenance {
         ];
     }
 
-    // =================================================================
-    // 2. 讀取單筆 (已修正：補上獨立欄位)
-    // =================================================================
+    // 讀取單筆 
     public function readOne($id) {
         $query = "SELECT 
                     m.*,
                     b.asset_name,
                     b.brand,
                     b.model,
-                    b.pre_property_no,    -- ★ 新增
-                    i.sub_no,             -- ★ 新增
+                    b.pre_property_no,   
+                    i.sub_no,             
                     CONCAT(b.pre_property_no, '-', i.sub_no) as full_property_no
                   FROM " . $this->table . " m
                   JOIN asset_items i ON m.item_id = i.id
@@ -136,12 +132,19 @@ class Maintenance {
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
-    // =================================================================
-    // 3. 新增維修單 (已修正：加入 issue_description)
-    // =================================================================
+    // 新增維修單
     public function create($data) {
         if (!isset($data['item_id']) || !isset($data['action_type'])) {
             return false;
+        }
+
+        // 取得前端傳來的日期
+        $send_date = $data['send_date'] ?? date('Y-m-d');
+
+        // 如果是手動輸入的 10 位數日期 (YYYY-MM-DD)
+        if (strlen($send_date) === 10) {
+            // 補上「目前系統的時分秒」，這樣能確保在同一天內，送修會排在入庫之後
+            $send_date .= " " . date("H:i:s");
         }
 
         // 先查快照 (為了記錄送修前的狀態)
@@ -163,10 +166,9 @@ class Maintenance {
         $stmt->bindValue(':user_id', $data['user_id']);
         $stmt->bindValue(':prev_status', $currentItem['status']);
         $stmt->bindValue(':prev_condition', $currentItem['item_condition']);
-        $stmt->bindValue(':send_date', $data['send_date'] ?? date('Y-m-d'));
+        $stmt->bindValue(':send_date', $send_date);
         $stmt->bindValue(':action_type', $data['action_type']);
         $stmt->bindValue(':vendor', $data['vendor']);
-        // ★ 新增：綁定故障描述
         $stmt->bindValue(':issue_description', $data['issue_description'] ?? ''); 
 
         if ($stmt->execute()) {
@@ -175,17 +177,13 @@ class Maintenance {
         return false;
     }
 
-    // =================================================================
-    // 4. 更新維修單 (已修正：支援全欄位修改，包含編輯與結案)
-    // =================================================================
+    // 更新維修單
     public function update($id, $data) {
-        // 我們這裡採取「有傳什麼就改什麼」的策略
-        // 這樣同一個 update 方法可以支援「修改基本資料」與「結案」兩種情境
-        
+        // 同一個 update 方法可以支援「修改基本資料」與「結案」兩種情境
         $fields = [];
         $params = [':id' => $id];
 
-        // --- A. 基本欄位 (隨時可改) ---
+        // 基本欄位 (隨時可改)
         if (isset($data['action_type'])) {
             $fields[] = "action_type = :action_type";
             $params[':action_type'] = $data['action_type'];
@@ -198,15 +196,21 @@ class Maintenance {
             $fields[] = "send_date = :send_date";
             $params[':send_date'] = $data['send_date'];
         }
-        if (isset($data['issue_description'])) { // ★ 支援修改故障描述
+        if (isset($data['issue_description'])) {
             $fields[] = "issue_description = :issue_description";
             $params[':issue_description'] = $data['issue_description'];
         }
 
-        // --- B. 結案欄位 (結案時才會傳) ---
-        if (array_key_exists('finish_date', $data)) { // 使用 array_key_exists 允許傳 NULL (雖然通常不會)
+        // 結案欄位 (結案時才會傳) 
+        if (array_key_exists('finish_date', $data) && !empty($data['finish_date'])) { // 使用 array_key_exists 允許傳 NULL (雖然通常不會)
+            $finish_date = $data['finish_date'];
+            // 比照 create 的做法，補上時間戳記
+            if (strlen($finish_date) === 10) {
+                $finish_date .= " " . date("H:i:s");
+            }
+
             $fields[] = "finish_date = :finish_date";
-            $params[':finish_date'] = $data['finish_date'];
+            $params[':finish_date'] = $finish_date;
         }
         if (array_key_exists('maintain_result', $data)) {
             $fields[] = "maintain_result = :maintain_result";
@@ -237,13 +241,10 @@ class Maintenance {
         return $stmt->execute();
     }
 
-    // =================================================================
-    // 5. 軟刪除 (這裡使用 Trigger 邏輯)
-    // =================================================================
+    // 5. 軟刪除 (使用 Trigger 邏輯)
     public function delete($id) {
-        // ★ 注意：這裡我們只把 is_deleted 設為 1
-        // ★ 資產狀態還原的動作，現在由資料庫 Trigger (trg_maintenance_update) 自動處理
-        // ★ 這樣比較安全，因為不管用 PHP 刪除還是手動 SQL 刪除，狀態都會自動還原
+        // 資產狀態還原的動作，現在由資料庫 Trigger (trg_maintenance_update) 自動處理
+        // 這樣比較安全，因為不管用 PHP 刪除還是手動 SQL 刪除，狀態都會自動還原
         
         $query = "UPDATE " . $this->table . " SET is_deleted = 1 WHERE id = :id";
         $stmt = $this->conn->prepare($query);
