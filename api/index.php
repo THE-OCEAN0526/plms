@@ -60,6 +60,9 @@ spl_autoload_register(function ($className) {
     }
 });
 
+// 引入 composer 的 autoload
+require_once __DIR__ . '/../vendor/autoload.php';
+
 
 // 初始化資料庫
 $database = new Database();
@@ -108,6 +111,12 @@ $router->add('DELETE', '/api/maintenances/{id}', 'MaintenanceController@delete')
 $router->add('GET', '/api/maintenances', 'MaintenanceController@index');
 // 取得單筆資料 (點擊編輯時用)
 $router->add('GET', '/api/maintenances/{id}', 'MaintenanceController@show');
+
+// ---- Reports Routes (報表) ---
+$router->add('GET', '/api/reports/metadata', 'ReportController@getMetadata');
+$router->add('POST', '/api/reports', 'ReportController@preview');
+$router->add('GET', '/api/reports', 'ReportController@exportAssets');
+
 
 // 執行分派
 $router->dispatch($_SERVER['REQUEST_METHOD'], $_SERVER['REQUEST_URI']);

@@ -257,5 +257,128 @@ class AssetItem {
 
         return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
+
+
+    /**
+     * 動態生成報表資料
+     * param string $type 報表類型 (asset_status, transaction_history, maintenance_history)
+     * param array $filters 篩選條件
+     */
+
+    public function getReportData($type, $filters) {
+        $whereClauses = ["1=1"];
+        $params = [];
+
+        // 1. 處理複選條件 (IN 子句)
+        $multiSelects = [
+            'categories' => 'b.category',
+            'statuses' => ($type === 'maintenance_history') ? 'm.result_status' : 'i.status', // 動態切換 statuses 對應的欄位
+            'conditions' => 'i.item_condition',
+            'prefixes' => 'b.pre_property_no',
+            'actions' => 't.action_type'
+        ];
+
+        foreach ($multiSelects as $key => $column) {
+            if (!empty($filters[$key]) && is_array($filters[$key])) {
+                $placeholders = implode(',', array_fill(0, count($filters[$key]), '?'));
+                $whereClauses[] = "$column IN ($placeholders)";
+                foreach ($filters[$key] as $val) {
+                    $params[] = $val;
+                }
+            }
+        }
+
+        // 2. 處理日期區間
+        $dateColumn = ($type === 'asset_status') ? 'b.purchase_date' : 
+                      (($type === 'transaction_history') ? 't.action_date' : 'm.send_date');
+
+        if (!empty($filters['startDate'])) {
+            $whereClauses[] = "$dateColumn >= ?";
+            $params[] = $filters['startDate'];
+        }
+        if (!empty($filters['endDate'])) {
+            $whereClauses[] = "$dateColumn <= ?";
+            $params[] = $filters['endDate'];
+        }
+
+        $whereSql = implode(' AND ', $whereClauses);
+
+        // 3. 根據類型執行 SQL (注意：使用 $this->conn)
+        switch ($type) {
+            case 'asset_status':
+                $sql = "SELECT 
+                            i.id,
+                            CONCAT(b.pre_property_no, ' ', i.sub_no) as full_code, -- 財產編號
+                            b.asset_name, -- 品名
+                            CONCAT(l.code, ' ', l.name) as location_name, -- 放置位置
+                            i.item_condition, -- 物品狀況
+                            i.status, -- 狀態
+                            b.spec, -- 規格
+                            b.brand, -- 廠牌
+                            b.model, -- 型號
+                            b.unit_price, -- 單價
+                            b.purchase_date, -- 驗收日期
+                            b.life_years, -- 使用年限
+                            b.accounting_items, -- 會計項目
+                            b.fund_source, -- 經費來源
+                            b.batch_no -- 增加單號
+                        FROM asset_items i
+                        JOIN asset_batches b ON i.batch_id = b.id
+                        LEFT JOIN locations l ON i.location = l.id
+                        LEFT JOIN users u ON i.owner_id = u.id
+                        WHERE $whereSql 
+                        ORDER BY b.pre_property_no ASC, i.sub_no ASC";
+                break;
+            
+            case 'transaction_history':
+                $sql = "SELECT 
+                            t.id, 
+                            CONCAT(b.pre_property_no, ' ', i.sub_no) as full_code, -- 財產編號
+                            b.asset_name, -- 品名
+                            t.action_type, -- 異動動作 (借用、歸還、移轉等)
+                            IFNULL(u.name, t.borrower) as borrower_name, -- 相關人員
+                            u_new.name as new_owner_name, -- 新保管人 (移轉時才有值)
+                            t.action_date, -- 異動時間
+                            t.expected_return_date,
+                            CONCAT(l.code, ' ', l.name) as location_name, -- 放置位置
+                            t.note -- 備註
+                        FROM asset_transactions t
+                        JOIN asset_items i ON t.item_id = i.id
+                        JOIN asset_batches b ON i.batch_id = b.id
+                        LEFT JOIN users u ON t.borrower_id = u.id
+                        LEFT JOIN users u_new ON t.new_owner_id = u_new.id
+                        LEFT JOIN locations l ON t.location_id = l.id
+                        WHERE $whereSql 
+                        ORDER BY t.action_date ASC, t.id ASC";
+                break;
+
+            case 'maintenance_history':
+                // 這裡我們針對維修紀錄進行欄位抓取
+                $sql = "SELECT 
+                            m.id, 
+                            CONCAT(b.pre_property_no, ' ', i.sub_no) as full_code, -- 財產編號
+                            b.asset_name,        -- 品名
+                            m.action_type,       -- 類型 (維修、保養)
+                            m.vendor,            -- 廠商
+                            m.issue_description, -- 故障描述/報修原因 (送修時)
+                            m.maintain_result,   -- 維修結果/處理說明 (結案時)
+                            m.result_status,     -- 維修後狀態判定 ('維修成功','無法修復')
+                            m.cost,              -- 費用
+                            m.send_date,         -- 送修日期
+                            m.finish_date     -- 完修日期
+                        FROM asset_maintenance m
+                        JOIN asset_items i ON m.item_id = i.id
+                        JOIN asset_batches b ON i.batch_id = b.id
+                        WHERE $whereSql 
+                        ORDER BY m.send_date ASC, m.id ASC";
+                break;
+            default:
+                throw new Exception("無效的報表類型");
+        }
+
+        $stmt = $this->conn->prepare($sql); // 這裡修正為 $this->conn
+        $stmt->execute($params);
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 }
 ?>

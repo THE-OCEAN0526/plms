@@ -109,9 +109,8 @@ class AssetBatch {
                               status = '閒置',
                               item_condition = '好',
                               owner_id = :owner_id,
-                              location = NULL, 
+                              location = :location, 
                               updated_at = NOW()";
-            // PS: location 設為 NULL，代表參考 Batch 的位置；borrower_id 預設 NULL
 
             $stmtItem = $this->conn->prepare($queryItem);
 
@@ -120,6 +119,7 @@ class AssetBatch {
                 $stmtItem->bindParam(":batch_id", $new_batch_id);
                 $stmtItem->bindParam(":sub_no", $i);
                 $stmtItem->bindParam(":owner_id", $owner_id); // 財產擁有人
+                $stmtItem->bindParam(":location", $this->location);
                 $stmtItem->execute();
             }
 
@@ -145,7 +145,21 @@ class AssetBatch {
             }
             throw $e;
         }
-  }
-           
+    }
+
+    public function getAllPrefixes() {
+        try {
+            $query = "SELECT DISTINCT pre_property_no 
+                      FROM " . $this->table_batch . " 
+                      WHERE pre_property_no IS NOT NULL 
+                      ORDER BY pre_property_no ASC";
+            $stmt = $this->conn->prepare($query);
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_COLUMN);
+        } catch (PDOException $e) {
+            return [];
+        }
+    }
 }
+
 ?>
