@@ -108,6 +108,44 @@ class AuthController {
             http_response_code(400);
             echo json_encode(["message" => "參數錯誤 (theme 只能是 light 或 dark)"]);
         }
-    } 
+    }
+
+    public function updateProfile($params) {
+    // 驗證身份並取得目前資料庫中的使用者資訊 ($user 包含 id, name, staff_code 等)
+    $auth = new AuthMiddleware($this->db);
+    $currentUser = $auth->authenticate();
+
+    $data = json_decode(file_get_contents("php://input"), true);
+
+    try {
+        $userModel = new User($this->db);
+
+        // 【彈性處理】如果前端沒傳某個欄位，則沿用資料庫現有的值
+        $newName = !empty($data['name']) ? $data['name'] : $currentUser['name'];
+        $newStaffCode = !empty($data['staff_code']) ? $data['staff_code'] : $currentUser['staff_code'];
+        $newPassword = !empty($data['password']) ? $data['password'] : null;
+
+        // 執行更新
+        $success = $userModel->update(
+            $currentUser['id'], 
+            $newName, 
+            $newStaffCode, 
+            $newPassword
+        );
+
+        if ($success) {
+            echo json_encode([
+                "message" => "資料更新成功", 
+                "success" => true,
+                "data" => ["name" => $newName, "staff_code" => $newStaffCode]
+            ]);
+        } else {
+            throw new Exception("更新失敗");
+        }
+    } catch (Exception $e) {
+        http_response_code(400);
+        echo json_encode(["message" => $e->getMessage()]);
+    }
+}
 }
 ?>

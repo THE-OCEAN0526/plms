@@ -127,6 +127,43 @@ class User {
 		return $stmt->fetchAll(PDO::FETCH_ASSOC);
 	}
 
+	public function update($id, $name, $staff_code, $password = null) {
+    // 1. 檢查帳號 (staff_code) 是否被其他人佔用
+    // 注意：這裡必須用 staff_code，因為資料庫沒有 username 欄位
+    $checkQuery = "SELECT id FROM " . $this->table_name . " WHERE staff_code = :staff_code AND id != :id LIMIT 1";
+    $checkStmt = $this->conn->prepare($checkQuery);
+    $checkStmt->bindParam(':staff_code', $staff_code);
+    $checkStmt->bindParam(':id', $id);
+    $checkStmt->execute();
+
+    if ($checkStmt->rowCount() > 0) {
+        throw new Exception("帳號已被他人使用");
+    }
+
+    // 2. 準備更新 SQL
+    $query = "UPDATE " . $this->table_name . " SET name = :name, staff_code = :staff_code";
+    
+    // 只有當 password 有值時才加入更新
+    if (!empty($password)) {
+        $query .= ", password = :password";
+    }
+    $query .= " WHERE id = :id";
+
+    $stmt = $this->conn->prepare($query);
+
+    $stmt->bindParam(':name', $name);
+    $stmt->bindParam(':staff_code', $staff_code);
+    $stmt->bindParam(':id', $id);
+
+    if (!empty($password)) {
+        // 使用 PASSWORD_DEFAULT 進行加密
+        $hashed_password = password_hash($password, PASSWORD_DEFAULT);
+        $stmt->bindParam(':password', $hashed_password);
+    }
+
+    return $stmt->execute();
+}
+
 }
 
 ?>

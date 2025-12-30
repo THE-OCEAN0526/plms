@@ -75,6 +75,8 @@ $router = new Router($db);
 // --- Auth Routes (登入/註冊) ---
 $router->add('POST', '/api/tokens', 'AuthController@login');
 $router->add('POST', '/api/users', 'AuthController@register');
+// 更新個人資料
+$router->add('PUT', '/api/users/profile', 'AuthController@updateProfile');
 // 更新使用者主題偏好
 $router->add('PUT', '/api/users/theme', 'AuthController@updateTheme');
 // 取得使用者
