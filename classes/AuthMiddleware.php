@@ -33,7 +33,7 @@ class AuthMiddleware {
 
 
         // 3. 去資料庫檢查 Token 是否有效
-        $query = "SELECT id, name FROM " . $this->table_name . " WHERE api_token = :token LIMIT 1";
+        $query = "SELECT id, name, staff_code FROM " . $this->table_name . " WHERE api_token = :token LIMIT 1";
         $stmt = $this->conn->prepare($query);
         $stmt->bindParam(':token', $token);
         $stmt->execute();

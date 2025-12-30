@@ -129,7 +129,6 @@ class User {
 
 	public function update($id, $name, $staff_code, $password = null) {
     // 1. 檢查帳號 (staff_code) 是否被其他人佔用
-    // 注意：這裡必須用 staff_code，因為資料庫沒有 username 欄位
     $checkQuery = "SELECT id FROM " . $this->table_name . " WHERE staff_code = :staff_code AND id != :id LIMIT 1";
     $checkStmt = $this->conn->prepare($checkQuery);
     $checkStmt->bindParam(':staff_code', $staff_code);

@@ -111,36 +111,30 @@ class AuthController {
     }
 
     public function updateProfile($params) {
-    // 驗證身份並取得目前資料庫中的使用者資訊 ($user 包含 id, name, staff_code 等)
     $auth = new AuthMiddleware($this->db);
     $currentUser = $auth->authenticate();
-
     $data = json_decode(file_get_contents("php://input"), true);
 
     try {
         $userModel = new User($this->db);
 
-        // 【彈性處理】如果前端沒傳某個欄位，則沿用資料庫現有的值
+        if (isset($data['name']) && trim($data['name']) === "") {
+            throw new Exception("帳號名稱不可為空");
+        }
+        
+        if (isset($data['staff_code']) && trim($data['staff_code']) === "") {
+            throw new Exception("帳號不可為空");
+        }
+
+        // 彈性賦值邏輯
         $newName = !empty($data['name']) ? $data['name'] : $currentUser['name'];
         $newStaffCode = !empty($data['staff_code']) ? $data['staff_code'] : $currentUser['staff_code'];
         $newPassword = !empty($data['password']) ? $data['password'] : null;
 
-        // 執行更新
-        $success = $userModel->update(
-            $currentUser['id'], 
-            $newName, 
-            $newStaffCode, 
-            $newPassword
-        );
+        $success = $userModel->update($currentUser['id'], $newName, $newStaffCode, $newPassword);
 
         if ($success) {
-            echo json_encode([
-                "message" => "資料更新成功", 
-                "success" => true,
-                "data" => ["name" => $newName, "staff_code" => $newStaffCode]
-            ]);
-        } else {
-            throw new Exception("更新失敗");
+            echo json_encode(["message" => "更新成功", "success" => true]);
         }
     } catch (Exception $e) {
         http_response_code(400);
