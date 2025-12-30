@@ -11,19 +11,26 @@ class AuthMiddleware {
 
     public function authenticate() {
         $headers = $this->getAuthorizationHeader();
+        $token = null;
 
-        // 1. 檢查有沒有帶 Token
-        if(empty($headers)) {
+        // 1. 優先從 Header 檢查 Token
+        if (!empty($headers)) {
+            if (preg_match('/Bearer\s(\S+)/', $headers, $matches)) {
+                $token = $matches[1];
+            } else {
+                $token = $headers;
+            }
+        } 
+        // 2. 如果 Header 是空的，從 GET 參數檢查 (針對 Excel 匯出的 window.location.href)
+        else if (isset($_GET['api_token'])) {
+            $token = $_GET['api_token'];
+        }
+
+        // 檢查最終有沒有取得 Token
+        if(empty($token)) {
             $this->denyAccess("未提供驗證 (Token missing)");
         }
 
-        // 2. 解析 Token (通常格式是 "Bearer <token>")
-        if(preg_match('/Bearer\s(\S+)/', $headers, $matches)) {
-            $token = $matches[1];
-        } else {
-            // 如果前端沒加 Bearer，直接嘗試讀取整個 Header 當作 Token
-            $token = $headers;
-        }
 
         // 3. 去資料庫檢查 Token 是否有效
         $query = "SELECT id, name FROM " . $this->table_name . " WHERE api_token = :token LIMIT 1";

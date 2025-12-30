@@ -1,5 +1,4 @@
 <?php
-// controllers/ReportController.php
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -9,39 +8,53 @@ use PhpOffice\PhpSpreadsheet\Style\Fill;
 
 class ReportController {
     private $db;
+    private $auth;
 
     public function __construct($db) {
         $this->db = $db;
+        $this->auth = new AuthMiddleware($db);
     }
 
     // 取得前綴
     public function getMetadata($params) {
-        // 實例化 AssetBatch 來獲取編號前綴
+        $user = $this->auth->authenticate();
+        
         $batch = new AssetBatch($this->db);
         $results = [
-            "prefixes" => $batch->getAllPrefixes()
+            "prefixes" => $batch->getAllPrefixes($user['id']) 
         ];
+
+        if (ob_get_length()) ob_clean();
         header('Content-Type: application/json');
         echo json_encode($results);
+        exit;
     }
 
     // 預覽功能
     public function preview($params) {
+        $user = $this->auth->authenticate();
+        
         $json = file_get_contents('php://input');
         $data = json_decode($json, true);
         $model = new AssetItem($this->db);
-        $result = $model->getReportData($data['report_type'], $data['filters']);
+        
+        // 傳入當前使用者 ID 作為強制過濾條件
+        $result = $model->getReportData($data['report_type'], $data['filters'], $user['id']);
+        
         header('Content-Type: application/json');
         echo json_encode(array_slice($result, 0, 50));
+        exit;
     }
 
     // 匯出 Excel
     public function exportAssets($params) {
+        $user = $this->auth->authenticate();
+
         $type = $_GET['type'] ?? 'asset_status';
         $filters = json_decode($_GET['filters'] ?? '{}', true);
 
         $model = new AssetItem($this->db);
-        $data = $model->getReportData($type, $filters);
+        $data = $model->getReportData($type, $filters, $user['id']);
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();

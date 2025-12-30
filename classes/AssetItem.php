@@ -265,9 +265,10 @@ class AssetItem {
      * param array $filters 篩選條件
      */
 
-    public function getReportData($type, $filters) {
-        $whereClauses = ["1=1"];
-        $params = [];
+    public function getReportData($type, $filters, $current_owner_id) {
+        // 預設強制加入「保管人是我」的條件
+        $whereClauses = ["i.owner_id = :current_user_id"];
+        $params = [':current_user_id' => $current_owner_id];
 
         // 1. 處理複選條件 (IN 子句)
         $multiSelects = [
@@ -280,11 +281,13 @@ class AssetItem {
 
         foreach ($multiSelects as $key => $column) {
             if (!empty($filters[$key]) && is_array($filters[$key])) {
-                $placeholders = implode(',', array_fill(0, count($filters[$key]), '?'));
-                $whereClauses[] = "$column IN ($placeholders)";
-                foreach ($filters[$key] as $val) {
-                    $params[] = $val;
+                $placeholders = [];
+                foreach ($filters[$key] as $idx => $val) {
+                    $pName = ":" . $key . "_" . $idx;
+                    $placeholders[] = $pName;
+                    $params[$pName] = $val;
                 }
+                $whereClauses[] = "$column IN (" . implode(',', $placeholders) . ")";
             }
         }
 
@@ -293,17 +296,17 @@ class AssetItem {
                       (($type === 'transaction_history') ? 't.action_date' : 'm.send_date');
 
         if (!empty($filters['startDate'])) {
-            $whereClauses[] = "$dateColumn >= ?";
-            $params[] = $filters['startDate'];
+            $whereClauses[] = "$dateColumn >= :start_date";
+            $params[':start_date'] = $filters['startDate'];
         }
         if (!empty($filters['endDate'])) {
-            $whereClauses[] = "$dateColumn <= ?";
-            $params[] = $filters['endDate'];
+            $whereClauses[] = "$dateColumn <= :end_date";
+            $params[':end_date'] = $filters['endDate'];
         }
 
         $whereSql = implode(' AND ', $whereClauses);
 
-        // 3. 根據類型執行 SQL (注意：使用 $this->conn)
+        // 3. 根據類型執行 SQL
         switch ($type) {
             case 'asset_status':
                 $sql = "SELECT 

@@ -147,14 +147,20 @@ class AssetBatch {
         }
     }
 
-    public function getAllPrefixes() {
+    public function getAllPrefixes($owner_id) {
         try {
-            $query = "SELECT DISTINCT pre_property_no 
-                      FROM " . $this->table_batch . " 
-                      WHERE pre_property_no IS NOT NULL 
-                      ORDER BY pre_property_no ASC";
+            // 從單品表出發，去對應批次表的前綴
+            $query = "SELECT DISTINCT b.pre_property_no 
+                    FROM " . $this->table_batch . " b
+                    INNER JOIN " . $this->table_item . " i ON b.id = i.batch_id
+                    WHERE b.pre_property_no IS NOT NULL 
+                    AND i.owner_id = :owner_id -- 強制過濾目前保管人
+                    ORDER BY b.pre_property_no ASC";
+            
             $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(":owner_id", $owner_id);
             $stmt->execute();
+            
             return $stmt->fetchAll(PDO::FETCH_COLUMN);
         } catch (PDOException $e) {
             return [];
