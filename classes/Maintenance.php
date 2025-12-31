@@ -3,102 +3,61 @@ class Maintenance {
     private $conn;
     private $table = "asset_maintenance";
 
-    public $id;
-    public $item_id;
-    public $user_id;
-    public $send_date;
-    public $action_type;
-    public $vendor;
-    public $issue_description;
-    public $maintain_result;
-    public $result_status;
-    public $finish_date;
-    public $cost;
-    public $is_deleted;
-
     public function __construct($db) {
         $this->conn = $db;
     }
 
+    // 統一日期格式處理 (補全時分秒)
+    private function formatDateTime($date) {
+        if (empty($date)) return null;
+        return (strlen($date) === 10) ? $date . " " . date("H:i:s") : $date;
+    }
+
+    
+    private function getBaseSelect() {
+        return "SELECT 
+                    m.*, 
+                    b.asset_name, b.brand, b.model, b.pre_property_no,
+                    i.sub_no, 
+                    CONCAT(b.pre_property_no, '-', i.sub_no) as full_property_no,
+                    i.status as current_asset_status
+                FROM " . $this->table . " m
+                JOIN asset_items i ON m.item_id = i.id
+                JOIN asset_batches b ON i.batch_id = b.id";
+    }
 
     // 取得維修列表
     public function readAll($filters = [], $page = 1, $limit = 10) {
         $offset = ($page - 1) * $limit;
-
-        $query = "SELECT 
-                    m.id,
-                    m.item_id,
-                    m.send_date,
-                    m.action_type,
-                    m.vendor,
-                    m.issue_description, 
-                    m.maintain_result,
-                    m.result_status,
-                    m.finish_date,
-                    m.cost,
-                    m.is_deleted,
-                    -- 資產資訊 (分開欄位，方便前端 Autocomplete 格式化)
-                    b.asset_name,
-                    b.pre_property_no,   
-                    i.sub_no,             
-                    CONCAT(b.pre_property_no, '-', i.sub_no) as full_property_no,
-                    i.status as current_asset_status
-                  FROM " . $this->table . " m
-                  JOIN asset_items i ON m.item_id = i.id
-                  JOIN asset_batches b ON i.batch_id = b.id
-                  WHERE m.is_deleted = 0";
-
-        $conditions = [];
+        $conditions = ["m.is_deleted = 0"];
         $params = [];
 
-        // 加入 user_id 過濾
+        // 處理篩選條件
         if (!empty($filters['user_id'])) {
             $conditions[] = "m.user_id = :user_id";
             $params[':user_id'] = $filters['user_id'];
         }
 
-        // 搜尋邏輯 (同時搜 廠商、故障描述、處理結果、編號、品名)
         if (!empty($filters['keyword'])) {
-            $conditions[] = "(
-                m.vendor LIKE :keyword OR 
-                m.maintain_result LIKE :keyword OR
-                b.asset_name LIKE :keyword OR
-                CONCAT(b.pre_property_no, '-', i.sub_no) LIKE :keyword
-            )";
+            $conditions[] = "(m.vendor LIKE :keyword OR m.maintain_result LIKE :keyword OR b.asset_name LIKE :keyword OR CONCAT(b.pre_property_no, '-', i.sub_no) LIKE :keyword)";
             $params[':keyword'] = "%" . $filters['keyword'] . "%";
         }
 
-        if (!empty($filters['status']) && $filters['status'] == 'active') {
-            $conditions[] = "m.finish_date IS NULL";
-        } elseif (!empty($filters['status']) && $filters['status'] == 'finished') {
-            $conditions[] = "m.finish_date IS NOT NULL";
+        if (!empty($filters['status'])) {
+            $conditions[] = ($filters['status'] == 'active') ? "m.finish_date IS NULL" : "m.finish_date IS NOT NULL";
         }
 
-        if (count($conditions) > 0) {
-            $query .= " AND " . implode(" AND ", $conditions);
-        }
+        $whereClause = " WHERE " . implode(" AND ", $conditions);
 
-        $query .= " ORDER BY m.send_date DESC, m.id DESC";
-
-        // 分頁總數計算
-        $countQuery = "SELECT COUNT(*) FROM " . $this->table . " m 
-                       JOIN asset_items i ON m.item_id = i.id
-                       JOIN asset_batches b ON i.batch_id = b.id
-                       WHERE m.is_deleted = 0";
-        if (count($conditions) > 0) {
-            $countQuery .= " AND " . implode(" AND ", $conditions);
-        }
-        $stmtCount = $this->conn->prepare($countQuery);
+        // 執行總數查詢
+        $stmtCount = $this->conn->prepare("SELECT COUNT(*) FROM " . $this->table . " m JOIN asset_items i ON m.item_id = i.id JOIN asset_batches b ON i.batch_id = b.id " . $whereClause);
         $stmtCount->execute($params);
         $total_rows = $stmtCount->fetchColumn();
 
-        // 加上 LIMIT
-        $query .= " LIMIT " . (int)$offset . ", " . (int)$limit;
-
+        // 執行資料查詢
+        $query = $this->getBaseSelect() . $whereClause . " ORDER BY m.send_date DESC, m.id DESC LIMIT " . (int)$offset . ", " . (int)$limit;
         $stmt = $this->conn->prepare($query);
-        foreach ($params as $key => $val) {
-            $stmt->bindValue($key, $val);
-        }
+        foreach ($params as $key => $val) $stmt->bindValue($key, $val);
         $stmt->execute();
 
         return [
@@ -109,147 +68,85 @@ class Maintenance {
         ];
     }
 
-    // 讀取單筆 
+    // 讀取單筆
     public function readOne($id) {
-        $query = "SELECT 
-                    m.*,
-                    b.asset_name,
-                    b.brand,
-                    b.model,
-                    b.pre_property_no,   
-                    i.sub_no,             
-                    CONCAT(b.pre_property_no, '-', i.sub_no) as full_property_no
-                  FROM " . $this->table . " m
-                  JOIN asset_items i ON m.item_id = i.id
-                  JOIN asset_batches b ON i.batch_id = b.id
-                  WHERE m.id = :id AND m.is_deleted = 0
-                  LIMIT 1";
-
+        $query = $this->getBaseSelect() . " WHERE m.id = :id AND m.is_deleted = 0 LIMIT 1";
         $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(":id", $id);
-        $stmt->execute();
-
+        $stmt->execute([':id' => $id]);
         return $stmt->fetch(PDO::FETCH_ASSOC);
     }
 
     // 新增維修單
     public function create($data) {
-        if (!isset($data['item_id']) || !isset($data['action_type'])) {
-            return false;
-        }
+        if (!isset($data['item_id'], $data['action_type'])) return false;
 
-        // 取得前端傳來的日期
-        $send_date = $data['send_date'] ?? date('Y-m-d');
-
-        // 如果是手動輸入的 10 位數日期 (YYYY-MM-DD)
-        if (strlen($send_date) === 10) {
-            // 補上「目前系統的時分秒」，這樣能確保在同一天內，送修會排在入庫之後
-            $send_date .= " " . date("H:i:s");
-        }
-
-        // 先查快照 (為了記錄送修前的狀態)
-        $queryInfo = "SELECT status, item_condition FROM asset_items WHERE id = :id";
-        $stmtInfo = $this->conn->prepare($queryInfo);
+        // 取得維修前的資產狀態
+        $stmtInfo = $this->conn->prepare("SELECT status, item_condition FROM asset_items WHERE id = :id");
         $stmtInfo->execute([':id' => $data['item_id']]);
-        $currentItem = $stmtInfo->fetch(PDO::FETCH_ASSOC);
-
-        if (!$currentItem) return false;
+        $item = $stmtInfo->fetch(PDO::FETCH_ASSOC);
+        if (!$item) return false;
 
         $query = "INSERT INTO " . $this->table . " 
                   (item_id, user_id, prev_status, prev_condition, send_date, action_type, vendor, issue_description) 
-                  VALUES 
-                  (:item_id, :user_id, :prev_status, :prev_condition, :send_date, :action_type, :vendor, :issue_description)";
+                  VALUES (:item_id, :user_id, :prev_status, :prev_condition, :send_date, :action_type, :vendor, :issue_description)";
 
         $stmt = $this->conn->prepare($query);
-
-        $stmt->bindValue(':item_id', $data['item_id']);
-        $stmt->bindValue(':user_id', $data['user_id']);
-        $stmt->bindValue(':prev_status', $currentItem['status']);
-        $stmt->bindValue(':prev_condition', $currentItem['item_condition']);
-        $stmt->bindValue(':send_date', $send_date);
-        $stmt->bindValue(':action_type', $data['action_type']);
-        $stmt->bindValue(':vendor', $data['vendor']);
-        $stmt->bindValue(':issue_description', $data['issue_description'] ?? ''); 
-
-        if ($stmt->execute()) {
-            return $this->conn->lastInsertId();
-        }
-        return false;
+        return $stmt->execute([
+            ':item_id'           => $data['item_id'],
+            ':user_id'           => $data['user_id'],
+            ':prev_status'       => $item['status'],
+            ':prev_condition'    => $item['item_condition'],
+            ':send_date'         => $this->formatDateTime($data['start_date'] ?? date('Y-m-d')),
+            ':action_type'       => $data['action_type'],
+            ':vendor'            => $data['vendor'],
+            ':issue_description' => $data['issue_description'] ?? ''
+        ]) ? $this->conn->lastInsertId() : false;
     }
 
-    // 更新維修單
+    
     public function update($id, $data) {
-        // 同一個 update 方法可以支援「修改基本資料」與「結案」兩種情境
         $fields = [];
         $params = [':id' => $id];
 
-        // 基本欄位 (隨時可改)
-        if (isset($data['action_type'])) {
-            $fields[] = "action_type = :action_type";
-            $params[':action_type'] = $data['action_type'];
-        }
-        if (isset($data['vendor'])) {
-            $fields[] = "vendor = :vendor";
-            $params[':vendor'] = $data['vendor'];
-        }
-        if (isset($data['send_date'])) {
-            $fields[] = "send_date = :send_date";
-            $params[':send_date'] = $data['send_date'];
-        }
-        if (isset($data['issue_description'])) {
-            $fields[] = "issue_description = :issue_description";
-            $params[':issue_description'] = $data['issue_description'];
-        }
+        // 欄位映射表：'前端Key' => '資料庫欄位'
+        $updateMap = [
+            'action_type'       => 'action_type',
+            'vendor'            => 'vendor',
+            'issue_description' => 'issue_description',
+            'maintain_result'   => 'maintain_result',
+            'result_status'     => 'result_status',
+            'cost'              => 'cost'
+        ];
 
-        // 結案欄位 (結案時才會傳) 
-        if (array_key_exists('finish_date', $data) && !empty($data['finish_date'])) { // 使用 array_key_exists 允許傳 NULL (雖然通常不會)
-            $finish_date = $data['finish_date'];
-            // 比照 create 的做法，補上時間戳記
-            if (strlen($finish_date) === 10) {
-                $finish_date .= " " . date("H:i:s");
+        // 處理一般欄位
+        foreach ($updateMap as $apiKey => $dbCol) {
+            if (isset($data[$apiKey]) || array_key_exists($apiKey, $data)) {
+                $fields[] = "$dbCol = :$dbCol";
+                $params[":$dbCol"] = $data[$apiKey];
             }
+        }
 
+        // 處理需要特殊格式化的日期欄位
+        if (isset($data['start_date'])) {
+            $fields[] = "send_date = :send_date";
+            $params[':send_date'] = $this->formatDateTime($data['start_date']);
+        }
+
+        if (!empty($data['finish_date'])) {
             $fields[] = "finish_date = :finish_date";
-            $params[':finish_date'] = $finish_date;
-        }
-        if (array_key_exists('maintain_result', $data)) {
-            $fields[] = "maintain_result = :maintain_result";
-            $params[':maintain_result'] = $data['maintain_result'];
-        }
-        if (array_key_exists('result_status', $data)) {
-            $fields[] = "result_status = :result_status";
-            $params[':result_status'] = $data['result_status'];
-        }
-        if (isset($data['cost'])) {
-            $fields[] = "cost = :cost";
-            $params[':cost'] = $data['cost'];
+            $params[':finish_date'] = $this->formatDateTime($data['finish_date']);
         }
 
-        if (empty($fields)) {
-            return false; // 沒東西要改
-        }
+        if (empty($fields)) return false;
 
         $query = "UPDATE " . $this->table . " SET " . implode(', ', $fields) . " WHERE id = :id";
-        
         $stmt = $this->conn->prepare($query);
-        
-        // 綁定所有參數
-        foreach ($params as $key => $val) {
-            $stmt->bindValue($key, $val);
-        }
-
-        return $stmt->execute();
+        return $stmt->execute($params);
     }
 
-    // 5. 軟刪除 (使用 Trigger 邏輯)
+    // 軟刪除
     public function delete($id) {
-        // 資產狀態還原的動作，現在由資料庫 Trigger (trg_maintenance_update) 自動處理
-        // 這樣比較安全，因為不管用 PHP 刪除還是手動 SQL 刪除，狀態都會自動還原
-        
-        $query = "UPDATE " . $this->table . " SET is_deleted = 1 WHERE id = :id";
-        $stmt = $this->conn->prepare($query);
-        $stmt->bindParam(":id", $id);
-        return $stmt->execute();
+        $stmt = $this->conn->prepare("UPDATE " . $this->table . " SET is_deleted = 1 WHERE id = :id");
+        return $stmt->execute([':id' => $id]);
     }
 }
-?>
