@@ -37,27 +37,7 @@ class AssetController {
             return;
         }
 
-        // 資料對應，將資料塞入 Model 
-        $this->assetBatch->add_date = $data->add_date;
-        $this->assetBatch->batch_no = $data->batch_no;
-        $this->assetBatch->fund_source = $data->fund_source ?? null;
-        $this->assetBatch->purchase_date = $data->purchase_date ?? null;
-        $this->assetBatch->life_years = $data->life_years ?? null;
-        $this->assetBatch->accounting_items = $data->accounting_items ?? null;
-        $this->assetBatch->location = $data->location ?? null; // 這是 asset_batches 的 location ID
-
-        $this->assetBatch->pre_property_no = $data->pre_property_no ?? '';
-        $this->assetBatch->suf_start_no = intval($data->suf_start_no);
-        $this->assetBatch->suf_end_no = intval($data->suf_end_no);
-   
-        $this->assetBatch->category = $data->category;
-        $this->assetBatch->asset_name = $data->asset_name;
-        $this->assetBatch->brand = $data->brand ?? '';
-        $this->assetBatch->model = $data->model ?? '';
-        $this->assetBatch->spec = $data->spec ?? '';
-       
-        $this->assetBatch->unit = $data->unit;
-        $this->assetBatch->unit_price = $data->unit_price ?? 0;
+        $this->mapDataToModel($data);
 
         try {
             // 執行入庫，帶入操作者 ID 以記錄誰執行的動作
@@ -168,6 +148,82 @@ class AssetController {
             "timeline" => $history
         ]);
     }
+
+    // GET /api/batches (獲取當前用戶的所有入庫批次)
+    public function getBatches() {
+        $currentUser = $this->auth->authenticate();
+        
+        // 接收參數
+        $page    = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        $limit   = isset($_GET['limit']) ? (int)$_GET['limit'] : 10;
+        $keyword = isset($_GET['keyword']) ? $_GET['keyword'] : null;
+
+        // 呼叫具備分頁功能的 search 方法
+        $result = $this->assetBatch->search($currentUser['id'], $page, $limit, $keyword);
+
+        http_response_code(200);
+        echo json_encode([
+            "message" => "讀取成功",
+            "data" => $result['data'],
+            "meta" => [
+                "total" => $result['total'],
+                "page" => $result['page'],
+                "limit" => $result['limit'],
+                "total_pages" => $result['total_pages']
+            ]
+        ]);
+    }
+
+
+    // PUT /api/batches/{id} (修改批次資料)
+    public function updateBatch($params) {
+        $currentUser = $this->auth->authenticate();
+        $id = $params['id'] ?? null;
+        $data = json_decode(file_get_contents("php://input"));
+
+        if (!$id) {
+            http_response_code(400);
+            echo json_encode(["message" => "缺少批次 ID"]);
+            return;
+        }
+    
+        // 將前端傳來的資料映射到 Model 屬性
+       $this->mapDataToModel($data);
+
+        try {
+            if ($this->assetBatch->update($id, $currentUser['id'])) {
+                http_response_code(200);
+                echo json_encode(["message" => "批次資料已成功更新"]);
+            }
+        } catch (Exception $e) {
+            http_response_code(400);
+            echo json_encode(["message" => $e->getMessage()]);
+        }
+    }
+
+
+    private function mapDataToModel($data) {
+        $batch = $this->assetBatch;
+        $batch->pre_property_no = $data->pre_property_no;
+        $batch->suf_start_no    = (int)($data->suf_start_no ?? 0);
+        $batch->suf_end_no      = (int)($data->suf_end_no ?? 0);
+        $batch->asset_name      = $data->asset_name;
+        $batch->category        = $data->category;
+        $batch->brand           = $data->brand ?? '';
+        $batch->model           = $data->model ?? '';
+        $batch->spec            = $data->spec ?? '';
+        $batch->unit            = $data->unit ?? '';
+        $batch->unit_price      = $data->unit_price ?? 0;
+        $batch->location        = !empty($data->location) ? $data->location : null;
+        $batch->fund_source     = $data->fund_source ?? null;
+        $batch->purchase_date   = !empty($data->purchase_date) ? $data->purchase_date : null;
+        $batch->add_date        = !empty($data->add_date) ? $data->add_date : null;
+        $batch->life_years      = (!isset($data->life_years) || $data->life_years === "") ? null : $data->life_years;
+        $batch->batch_no        = $data->batch_no ?? '';
+        $batch->accounting_items = (!isset($data->accounting_items) || $data->accounting_items === "") ? null : $data->accounting_items;
+    }
+
+
 
 }
 ?>

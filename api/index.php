@@ -96,6 +96,9 @@ $router->add('GET', '/api/assets/{id}/history', 'AssetController@history');
 $router->add('POST', '/api/assets', 'AssetController@store');
 // 載入地點
 $router->add('GET', '/api/locations', 'LocationController@index');
+// 修改批次資料
+$router->add('GET', '/api/batches', 'AssetController@getBatches');
+$router->add('PUT', '/api/batches/{id}', 'AssetController@updateBatch');
 
 
 // --- Transaction Routes (異動) ---
